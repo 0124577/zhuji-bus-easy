@@ -71,6 +71,15 @@ ok('线路详情打开', !!lineState.open && lineState.vtRows > 3, `${lineName} 
 ok('横向时间轴可左右滚动', lineState.hScroll === 'auto' && lineState.scrollable, `${lineState.tlNodes} 节点`);
 ok('首页已无附近站点栏目', lineState.nearby === 0);
 
+// 确认线上已部署「还要 N 站」高亮条版本
+const deploy = await page.evaluate(async () => {
+  const txt = async (u) => (await fetch(u, { cache: 'no-store' })).text();
+  const [js, css] = await Promise.all([txt('js/plan.js'), txt('css/app.css')]);
+  return { js: js.indexOf('pl-hl') > -1, css: css.indexOf('.pl-hl') > -1 };
+});
+ok('线上已部署方案详情高亮条（JS）', deploy.js);
+ok('线上已部署方案详情高亮条（CSS）', deploy.css);
+
 const shotDir = 'C:/work/bus/_tmp/shots';
 await page.screenshot({ path: `${shotDir}/live-line.png` });
 await page.evaluate(() => window.ZJ.Line.close());
