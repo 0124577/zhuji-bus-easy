@@ -1,7 +1,9 @@
 /**
- * 诸暨公交 · 双 Tab 轻量版 E2E 自测
- * 覆盖：基础加载 / Tab 切换 / 定位与附近站点 / 线路搜索 / 线路实时页 / 上下行切换 /
- *      收藏 / 时刻表 / 到站提醒（含震动）/ 站点实时页 / 换乘规划 / 历史 / 边界场景 / 移动端适配
+ * 诸暨公交 · 轻量版 E2E 自测（v1.1）
+ * 覆盖：基础加载 / 首页栏目精简 / Tab 切换 / 定位 / 线路搜索 / 线路实时页 /
+ *      竖屏横向站点列表 / 上下行切换 / 收藏 / 时刻表 / 到站提醒（含震动）/
+ *      站点实时页 / 换乘规划 / 方案详情（分段实时 + 站点提醒）/ 历史 /
+ *      边界场景（定位失败 / 搜索无结果 / 网络异常降级 / 无方案）/ 移动端适配
  *
  * 运行：node tests/e2e/app-test.mjs
  * 环境变量：BASE_URL、CHROME_PATH
@@ -46,12 +48,25 @@ const clickAct = (act) => page.evaluate((a) => {
   if (!el) throw new Error('no element for act ' + act);
   el.click();
 }, act);
+const overflow = () => page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
+
+/* 选择一个站点（走真实 picker 交互） */
+async function pickStation(act, name) {
+  await clickAct(act);
+  await sleep(350);
+  await page.evaluate(() => document.querySelector('.sheet-tab[data-tab="search"]').click());
+  await sleep(200);
+  await page.type('#pkQ', name);
+  await sleep(500);
+  await page.evaluate(() => document.querySelector('#pkList .pick-stop').click());
+  await sleep(450);
+}
 
 await page.goto(BASE, { waitUntil: 'networkidle2' });
 await page.evaluate(() => { localStorage.clear(); });
 await page.reload({ waitUntil: 'networkidle2' });
 await page.waitForSelector('.line-row', { timeout: 8000 });
-await sleep(1800);
+await sleep(1600);
 
 /* ---------------- 1. 基础加载 ---------------- */
 section('基础加载与静态数据');
@@ -74,20 +89,19 @@ ok('线路列表已渲染', (await cnt('.line-row')) > 10, String(await cnt('.li
 ok('无公告 Tab', !tabTexts.some((t) => t.indexOf('公告') > -1));
 ok('无我的 Tab', !tabTexts.some((t) => t.indexOf('我的') > -1));
 
-/* ---------------- 2. 定位与附近站点 ---------------- */
-section('定位与附近站点');
+/* ---------------- 2. 首页栏目精简 + 定位 ---------------- */
+section('首页栏目精简与定位');
+ok('附近站点栏目已移除', !(await has('#nearbyCard')), '#nearbyCard 不存在');
+ok('页面无附近站点列表', (await cnt('.nb-row')) === 0, 'nb-row=' + (await cnt('.nb-row')));
+ok('无定位胶囊', !(await has('#homeLoc')));
+const homeOrder = await page.evaluate(() => {
+  const body = document.querySelector('.home-body');
+  return [...body.children].map((e) => e.id || e.className);
+});
+ok('首页依次为 收藏 / 提醒 / 线路列表', homeOrder[0] === 'favCard', homeOrder.join(' > '));
+ok('搜索框仍在页头', await has('.home-hdr #lineQ'));
 await page.waitForFunction(() => window.ZJ && ZJ.Geo && ZJ.Geo.state !== 'locating', { timeout: 12000 });
-await sleep(600);
-const geoState = await page.evaluate(() => ZJ.Geo.state);
-ok('定位成功', geoState === 'ok', geoState);
-const locChip = await txt('#homeLocTxt');
-ok('定位胶囊显示最近站名', locChip && locChip !== '定位中' && locChip !== '定位失败', locChip);
-const nearRows = await cnt('.nb-row');
-ok('附近站点列表 >= 3 条', nearRows >= 3, String(nearRows));
-const nearFirst = await page.$eval('.nb-row', (el) => el.textContent.replace(/\s+/g, ' ').trim());
-ok('附近站点显示距离', /(\d+ 米|\d+\.\d 公里)/.test(nearFirst), nearFirst);
-const nearAsc = await page.$$eval('.nb-row .nb-dist', (els) => els.map((e) => parseFloat(e.textContent) * (e.textContent.indexOf('公里') > -1 ? 1000 : 1)));
-ok('附近站点按距离升序', nearAsc.every((v, i) => i === 0 || v >= nearAsc[i - 1]), nearAsc.join(','));
+ok('定位能力仍可用（供去哪「我的位置」）', (await page.evaluate(() => ZJ.Geo.state)) === 'ok', await page.evaluate(() => ZJ.Geo.state));
 
 /* ---------------- 3. 线路搜索 ---------------- */
 section('线路搜索');
@@ -125,8 +139,8 @@ await sleep(1100);
 ok('进入线路详情页', await page.$eval('#page-line', (el) => el.classList.contains('on')));
 ok('标题为 23路', (await txt('#lnName')) === '23路', await txt('#lnName'));
 ok('方向信息包含首末站', (await txt('#lnDir')).indexOf('双福村') > -1, await txt('#lnDir'));
-ok('站点序列 38 站', (await cnt('.stop-row')) === 38, String(await cnt('.stop-row')));
-ok('横向时间轴 38 个站点', (await cnt('.tl-item')) === 38, String(await cnt('.tl-item')));
+ok('站点序列 38 站', (await cnt('.vt-row')) === 38, String(await cnt('.vt-row')));
+ok('横向站点列表 38 站', (await cnt('#tl .tl-item')) === 38, String(await cnt('#tl .tl-item')));
 ok('时间轴渲染车辆标记', (await cnt('.tl-bus')) === 2, String(await cnt('.tl-bus')));
 ok('实时信息卡显示车牌', (await txt('#lineStat')).indexOf('浙D00001D') > -1, (await txt('#lineStat')).slice(0, 80));
 ok('信息卡有实时标记', (await txt('#lineStat')).indexOf('实时') > -1);
@@ -134,7 +148,7 @@ ok('票价来自接口', (await txt('#lineInfo')).indexOf('票价') > -1, await 
 
 await page.evaluate(() => {
   const name = window.__testStation;
-  document.querySelector('.stop-row[data-station="' + name + '"]').click();
+  document.querySelector('.vt-row[data-station="' + name + '"]').click();
 });
 await sleep(500);
 const statTxt = await txt('#lineStat');
@@ -143,22 +157,86 @@ ok('显示预计到达分钟', /约 \d+ 分钟/.test(statTxt), statTxt.slice(0, 
 ok('显示剩余距离', /(\d+ 米|\d+\.\d 公里)/.test(statTxt), statTxt.slice(0, 80));
 const myStopTxt = await txt('#myStopBar');
 ok('等车站条显示所选站', myStopTxt.indexOf(await page.evaluate(() => window.__testStation)) > -1, myStopTxt);
-const etaCount = await cnt('.stop-eta.live');
-ok('站点列表显示实时倒计时', etaCount > 0, String(etaCount));
+ok('站点列表显示实时倒计时', (await cnt('.vt-eta.live')) > 0, String(await cnt('.vt-eta.live')));
 
-/* ---------------- 5. 上下行切换 ---------------- */
+/* ---------------- 5. 竖屏横向站点列表 ---------------- */
+section('竖屏横向站点列表（左右滑动浏览整条线路）');
+const tlInfo = await page.evaluate(() => {
+  const sc = document.getElementById('tlScroll');
+  const nm = document.querySelector('#tl .tl-nm');
+  const cs = getComputedStyle(nm);
+  const before = sc.scrollLeft;
+  sc.scrollLeft = 300;
+  const after = sc.scrollLeft;
+  sc.scrollLeft = 600;
+  const after2 = sc.scrollLeft;
+  return {
+    sw: sc.scrollWidth, cw: sc.clientWidth, before, after, after2,
+    writing: cs.writingMode, overflowX: getComputedStyle(sc).overflowX,
+    hint: document.getElementById('tlHint').textContent
+  };
+});
+ok('站点条可横向滚动（内容宽 > 可视宽）', tlInfo.sw > tlInfo.cw, tlInfo.sw + '/' + tlInfo.cw);
+ok('横向容器 overflow-x 可滚动', tlInfo.overflowX === 'auto' || tlInfo.overflowX === 'scroll', tlInfo.overflowX);
+ok('可滚动到右侧站点', tlInfo.after2 > tlInfo.before, JSON.stringify([tlInfo.before, tlInfo.after2]));
+ok('站名为竖排文字', tlInfo.writing === 'vertical-rl', tlInfo.writing);
+ok('显示滑动提示且含站数', /共 38 站/.test(tlInfo.hint), tlInfo.hint);
+const tlTapOk = await page.evaluate(() => {
+  const items = document.querySelectorAll('#tl .tl-item');
+  const target = items[items.length - 1];
+  target.click();
+  return document.getElementById('myStopBar').textContent.indexOf(target.dataset.station) > -1;
+});
+ok('点击站点条可设为等车站', tlTapOk);
+const tlOverflow = await overflow();
+ok('线路页无横向溢出', tlOverflow.sw <= tlOverflow.iw + 1, JSON.stringify(tlOverflow));
+
+/* 竖向时间轴（大字版，老年友好） */
+const vt = await page.evaluate(() => {
+  const rows = document.querySelectorAll('#stopList .vt-row');
+  const name = document.querySelector('#stopList .vt-name');
+  const bell = document.querySelector('#stopList .vt-bell');
+  const axis = document.querySelector('#stopList .vt-axis');
+  const tlCard = document.querySelector('.tl-card');
+  const vtBox = document.getElementById('stopList');
+  return {
+    rows: rows.length,
+    font: parseFloat(getComputedStyle(name).fontSize),
+    bell: bell ? Math.round(bell.getBoundingClientRect().width) : 0,
+    minH: parseFloat(getComputedStyle(rows[0]).minHeight),
+    axisLine: parseFloat(getComputedStyle(axis, '::before').width),
+    bus: document.querySelectorAll('#stopList .vt-bus').length,
+    title: document.querySelector('.stop-sec .sec-h b').textContent,
+    afterHorizontal: !!(tlCard.compareDocumentPosition(vtBox) & Node.DOCUMENT_POSITION_FOLLOWING)
+  };
+});
+ok('线路页有竖向时间轴', vt.rows === 38, String(vt.rows));
+ok('竖向时间轴位于横向时间轴下方', vt.afterHorizontal);
+ok('竖向时间轴标题标注大字', vt.title.indexOf('竖向') > -1, vt.title);
+ok('竖向站名 >= 15px（老年友好）', vt.font >= 15, String(vt.font));
+ok('竖向行高 >= 56px', vt.minH >= 56, String(vt.minH));
+ok('竖向有连续轴线', vt.axisLine >= 3, String(vt.axisLine));
+ok('竖向时间轴提醒按钮 >= 40px', vt.bell >= 40, String(vt.bell));
+ok('竖向时间轴标记车辆位置', vt.bus > 0, String(vt.bus));
+await page.evaluate(() => {
+  const name = window.__testStation;
+  document.querySelector('.vt-row[data-station="' + name + '"]').click();
+});
+await sleep(400);
+
+/* ---------------- 6. 上下行切换 ---------------- */
 section('上下行切换');
 const beforeDir = await txt('#lnDir');
 await clickAct('line-swap');
 await sleep(700);
 const afterDir = await txt('#lnDir');
 ok('切换方向后文案变化', beforeDir !== afterDir, beforeDir + ' -> ' + afterDir);
-ok('切换后站点列表仍完整', (await cnt('.stop-row')) > 30, String(await cnt('.stop-row')));
+ok('切换后站点列表仍完整', (await cnt('.vt-row')) > 30, String(await cnt('.vt-row')));
 ok('切换后出现提示', (await txt('#toast')).indexOf('方向') > -1, await txt('#toast'));
 await clickAct('line-swap');
 await sleep(600);
 
-/* ---------------- 6. 收藏线路 ---------------- */
+/* ---------------- 7. 收藏 ---------------- */
 section('收藏');
 await clickAct('line-fav');
 await sleep(200);
@@ -176,7 +254,7 @@ await clickAct('line-back');
 await sleep(600);
 ok('取消收藏后首页不再显示', (await txt('#favBody')).indexOf('23路') === -1);
 
-/* ---------------- 7. 发车时刻表 ---------------- */
+/* ---------------- 8. 发车时刻表 ---------------- */
 section('发车时刻表');
 await page.evaluate(() => document.querySelector('.line-row[data-name="23路"]').click());
 await sleep(1200);
@@ -189,13 +267,13 @@ ok('时刻表标注班次数', /共 \d+ 班/.test(sheetTxt), sheetTxt.slice(0, 6
 await clickAct('close-sheet');
 await sleep(500);
 
-/* ---------------- 8. 到站提醒 ---------------- */
+/* ---------------- 9. 到站提醒（线路页） ---------------- */
 section('本地到站提醒（弹窗 + 震动）');
 await page.evaluate(() => {
   window.__vibrate = [];
   navigator.vibrate = (p) => { window.__vibrate.push(p); return true; };
   const name = window.__testStation;
-  document.querySelector('.stop-row[data-station="' + name + '"] .bell').click();
+  document.querySelector('.vt-row[data-station="' + name + '"] .vt-bell').click();
 });
 await sleep(700);
 const rmSheet = await txt('#sheet');
@@ -214,14 +292,12 @@ if (alertShown) {
   const alertTxt = await txt('#alertCard');
   ok('弹窗说明车辆即将到站', alertTxt.indexOf('即将到站') > -1, alertTxt.slice(0, 60));
   ok('弹窗含车牌与站名', alertTxt.indexOf('浙D00001D') > -1 && alertTxt.indexOf(await page.evaluate(() => window.__testStation)) > -1, alertTxt.slice(0, 80));
-  const vib = await page.evaluate(() => window.__vibrate.length);
-  ok('触发时调用震动 API', vib > 0, String(vib));
+  ok('触发时调用震动 API', (await page.evaluate(() => window.__vibrate.length)) > 0);
   await page.evaluate(() => document.getElementById('rmGo').click());
   await sleep(400);
   ok('弹窗可关闭', await page.$eval('#alertMask', (el) => el.hidden));
 }
 ok('提醒完成后标记为已提醒', await page.evaluate(() => ZJ.Reminder.list()[0].done === true));
-/* 提醒管理 */
 await page.evaluate(() => { ZJ.Line.close(); ZJ.setTab('home'); });
 await sleep(700);
 ok('首页显示提醒记录卡片', await page.$eval('#remindCard', (el) => !el.hidden));
@@ -236,7 +312,7 @@ ok('可删除提醒记录', await page.evaluate(() => ZJ.Reminder.list().length 
 await page.evaluate(() => ZJ.UI.closeSheet());
 await sleep(400);
 
-/* ---------------- 9. 站点实时页 ---------------- */
+/* ---------------- 10. 站点实时页 ---------------- */
 section('站点实时页');
 await page.evaluate(() => ZJ.Station.open('火车站'));
 await page.waitForFunction(() => document.getElementById('page-station').classList.contains('on'), { timeout: 3000 });
@@ -252,14 +328,12 @@ ok('线路卡片含预计到站', /(约 \d+ 分|已到站|—)/.test(busInfo), b
 await page.evaluate(() => document.getElementById('stFav').click());
 await sleep(300);
 ok('收藏站点写入本地', await page.evaluate(() => ZJ.Fav.hasStation('火车站')));
-const stOverflow = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
+const stOverflow = await overflow();
 ok('站点页无横向溢出', stOverflow.sw <= stOverflow.iw + 1, JSON.stringify(stOverflow));
 await page.evaluate(() => document.querySelector('.st-line').click());
 await sleep(900);
 ok('从站点页进入线路页', await page.$eval('#page-line', (el) => el.classList.contains('on')));
 ok('线路页等车站为所选站点', (await txt('#myStopBar')).indexOf('火车站') > -1, await txt('#myStopBar'));
-const lineOverflow = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
-ok('线路页无横向溢出', lineOverflow.sw <= lineOverflow.iw + 1, JSON.stringify(lineOverflow));
 await page.evaluate(() => ZJ.Line.close());
 await sleep(500);
 await page.evaluate(() => ZJ.Station.close());
@@ -271,32 +345,16 @@ ok('点击收藏站点可进入站点页', (await txt('#stName')) === '火车站
 await page.evaluate(() => ZJ.Station.close());
 await sleep(600);
 
-/* ---------------- 10. 去哪 / 换乘 ---------------- */
+/* ---------------- 11. 去哪 / 换乘 ---------------- */
 section('换乘规划与历史');
 await page.evaluate(() => ZJ.setTab('go'));
 await sleep(500);
 ok('切到去哪页', await page.$eval('#page-go', (el) => el.classList.contains('on')));
 ok('去哪页显示起终点选择', (await txt('#fromName')).indexOf('起点') > -1, await txt('#fromName'));
 
-await clickAct('pick-from');
-await sleep(400);
-await page.evaluate(() => document.querySelector('.sheet-tab[data-tab="search"]').click());
-await sleep(300);
-await page.type('#pkQ', '火车站');
-await sleep(450);
-ok('站名搜索有结果', (await cnt('#pkList .pick-stop')) > 0, String(await cnt('#pkList .pick-stop')));
-await page.evaluate(() => document.querySelector('#pkList .pick-stop').click());
-await sleep(600);
+await pickStation('pick-from', '火车站');
 ok('起点已选择', (await txt('#fromName')) === '火车站', await txt('#fromName'));
-
-await clickAct('pick-to');
-await sleep(400);
-await page.evaluate(() => document.querySelector('.sheet-tab[data-tab="search"]').click());
-await sleep(300);
-await page.type('#pkQ', '草塔停车场');
-await sleep(450);
-ok('终点候选出现', (await cnt('#pkList .pick-stop')) > 0);
-await page.evaluate(() => document.querySelector('#pkList .pick-stop').click());
+await pickStation('pick-to', '草塔停车场');
 await sleep(1200);
 ok('生成换乘方案', (await cnt('.plan-card')) === 1, 'cards=' + (await cnt('.plan-card')));
 const planTabs = await cnt('.plan-tab');
@@ -305,6 +363,8 @@ const planTxt = await txt('#planResult');
 ok('方案含预计耗时', /\d+分钟|\d+ 分钟/.test(planTxt), planTxt.slice(0, 80));
 ok('方案含乘车段', planTxt.indexOf('乘') > -1, planTxt.slice(0, 100));
 ok('方案含免责说明', planTxt.indexOf('仅供参考') > -1);
+ok('方案卡片可点击进详情', await has('.plan-cardlink[data-act="plan-open"]'));
+ok('方案卡片带详情提示', (await txt('.plan-more')).indexOf('实时') > -1, await txt('.plan-more'));
 ok('历史记录已保存', await page.evaluate(() => (ZJ.Store.get('zjbus.history.v1', []) || []).length === 1));
 ok('历史列表已渲染', (await cnt('.hist-row')) === 1, String(await cnt('.hist-row')));
 
@@ -312,8 +372,119 @@ if (planTabs > 1) {
   await page.evaluate(() => document.querySelectorAll('.plan-tab')[1].click());
   await sleep(400);
   ok('可切换方案标签', await page.$eval('.plan-tab:nth-child(2)', (el) => el.classList.contains('on')));
+  await page.evaluate(() => document.querySelectorAll('.plan-tab')[0].click());
+  await sleep(300);
 }
 
+/* ---------------- 12. 方案详情页 ---------------- */
+section('方案详情页（分段实时公交 + 站点提醒）');
+await page.evaluate(() => document.querySelector('.plan-cardlink').click());
+await page.waitForFunction(() => document.getElementById('page-plan').classList.contains('on'), { timeout: 4000 });
+await sleep(1500);
+ok('点击方案卡片进入详情页', await page.$eval('#page-plan', (el) => el.classList.contains('on')));
+ok('详情页标题为出行方案', (await txt('#plTitle')) === '出行方案', await txt('#plTitle'));
+ok('副标题含起终点', (await txt('#plSub')).indexOf('火车站') > -1 && (await txt('#plSub')).indexOf('草塔停车场') > -1, await txt('#plSub'));
+ok('展示分段卡片', (await cnt('.pl-leg')) >= 1, String(await cnt('.pl-leg')));
+ok('汇总显示总耗时', /\d+/.test(await txt('.pl-sum .big')), await txt('.pl-sum .big'));
+ok('汇总显示站数与段数', /共 \d+ 站/.test(await txt('.pl-sum-chips')), await txt('.pl-sum-chips'));
+const legLive = await txt('.pl-live');
+ok('分段展示实时车辆信息', legLive.length > 0, legLive.slice(0, 60));
+ok('实时块含剩余站或收班说明', /(\d+站|已收班|暂无|实时数据)/.test(legLive), legLive.slice(0, 60));
+ok('展示上下车站', (await cnt('.pl-hop')) >= 2, String(await cnt('.pl-hop')));
+ok('展示该段线路站点条', (await cnt('.pl-strip .tl-item')) > 5, String(await cnt('.pl-strip .tl-item')));
+const plStrip = await page.evaluate(() => {
+  const sc = document.getElementById('plSc0');
+  const nm = document.querySelector('.pl-strip .tl-nm');
+  sc.scrollLeft = 320;
+  return { sw: sc.scrollWidth, cw: sc.clientWidth, left: sc.scrollLeft, writing: getComputedStyle(nm).writingMode };
+});
+ok('详情页站点条可横向滚动', plStrip.sw > plStrip.cw && plStrip.left > 0, JSON.stringify(plStrip));
+ok('详情页站名竖排', plStrip.writing === 'vertical-rl', plStrip.writing);
+ok('详情页站点行带提醒铃铛', (await cnt('.pl-bell')) > 3, String(await cnt('.pl-bell')));
+ok('详情页站点行显示到站时间', /(\d+ 站|分|已到站|已过站|—)/.test(await txt('.vt-eta')), await txt('.vt-eta'));
+
+/* 详情页竖向时间轴（大字版） */
+const vtPlan = await page.evaluate(() => {
+  const rows = document.querySelectorAll('.vt-plan .vt-row');
+  const name = document.querySelector('.vt-plan .vt-name');
+  const tile = document.querySelector('.pl-strip');
+  const vert = document.querySelector('.vt-plan');
+  return {
+    rows: rows.length,
+    font: parseFloat(getComputedStyle(name).fontSize),
+    bell: Math.round(document.querySelector('.vt-plan .pl-bell').getBoundingClientRect().width),
+    board: !!document.querySelector('.vt-plan .vt-row.board'),
+    alight: !!document.querySelector('.vt-plan .vt-row.alight'),
+    tags: [...document.querySelectorAll('.vt-plan .vt-tag')].map((e) => e.textContent),
+    afterHorizontal: !!(tile.compareDocumentPosition(vert) & Node.DOCUMENT_POSITION_FOLLOWING)
+  };
+});
+ok('详情页有竖向时间轴', vtPlan.rows > 5, String(vtPlan.rows));
+ok('详情页竖向时间轴位于横向站点条下方', vtPlan.afterHorizontal);
+ok('详情页竖向站名 >= 16px', vtPlan.font >= 16, String(vtPlan.font));
+ok('详情页竖向提醒按钮 >= 38px', vtPlan.bell >= 38, String(vtPlan.bell));
+ok('详情页竖向标记上车站', vtPlan.board && vtPlan.tags.some((t) => t.indexOf('上车') > -1), vtPlan.tags.join(','));
+ok('详情页竖向标记下车站', vtPlan.alight && vtPlan.tags.some((t) => t.indexOf('下车') > -1), vtPlan.tags.join(','));
+const plOverflow = await overflow();
+ok('详情页无横向溢出', plOverflow.sw <= plOverflow.iw + 1, JSON.stringify(plOverflow));
+
+/* 开启提醒 */
+await page.evaluate(() => document.querySelector('.pl-bell').click());
+await sleep(700);
+const plSheet = await txt('#sheet');
+ok('详情页铃铛打开提醒弹层', plSheet.indexOf('到站提醒') > -1 && plSheet.indexOf('下一站提醒') > -1, plSheet.slice(0, 60));
+const bellStation = await page.evaluate(() => document.querySelector('.pl-bell').dataset.station);
+const bellLine = await page.evaluate(() => document.querySelector('.pl-bell').dataset.line);
+ok('提醒弹层含线路与站点', plSheet.indexOf(bellLine) > -1 && plSheet.indexOf(bellStation) > -1, bellLine + '/' + bellStation);
+await page.evaluate(() => document.querySelector('.rm-mode[data-mode="one"]').click());
+await sleep(200);
+await clickAct('rm-save');
+await sleep(800);
+ok('详情页可开启「下一站提醒」', await page.evaluate((a) => ZJ.Reminder.list().some((r) => r.station === a.station && r.mode === 'one'), { station: bellStation }));
+ok('开启后铃铛高亮', (await cnt('.pl-bell.on')) > 0, String(await cnt('.pl-bell.on')));
+ok('提醒写入 localStorage', await page.evaluate(() => (ZJ.Store.get('zjbus.reminders.v1', []) || []).length === 1));
+
+/* 关闭提醒 */
+await page.evaluate(() => document.querySelector('.pl-bell.on').click());
+await sleep(600);
+ok('再次点击可打开关闭入口', await has('[data-act="rm-cancel"]'));
+await clickAct('rm-cancel');
+await sleep(700);
+ok('详情页可关闭提醒', await page.evaluate(() => ZJ.Reminder.list().length === 0));
+ok('关闭后铃铛取消高亮', (await cnt('.pl-bell.on')) === 0, String(await cnt('.pl-bell.on')));
+
+/* 跳转该线路实时页 */
+await page.evaluate(() => document.querySelector('.pl-open-line').click());
+await sleep(1200);
+ok('详情页可跳转分段线路实时页', await page.$eval('#page-line', (el) => el.classList.contains('on')));
+await page.evaluate(() => ZJ.Line.close());
+await sleep(600);
+
+/* 降级：实时接口失效 */
+await page.evaluate(() => {
+  ZJ.Api.vehicles = async () => { throw new Error('网络异常，请检查网络'); };
+  ZJ.Plan.refresh();
+});
+await sleep(1400);
+ok('接口失效显示降级提示条', (await txt('#plSummary')).indexOf('已自动降级') > -1, (await txt('#plSummary')).slice(0, 60));
+ok('降级提示提供重试', await has('.degrade-banner [data-act="plan-refresh"]'));
+ok('降级后仍展示分段卡片', (await cnt('.pl-leg')) >= 1, String(await cnt('.pl-leg')));
+ok('降级后站点条仍可用', (await cnt('.pl-strip .tl-item')) > 5);
+ok('降级后站点提醒仍可操作', (await cnt('.pl-bell')) > 3);
+/* 恢复接口 */
+await page.evaluate(() => {
+  ZJ.Api.vehicles = async () => ({ busAverageSpeed: 240, list: [{ vehicleOrder: 3, distance: 120, isArriveStation: 0, plateNumber: '浙D00031D' }] });
+  ZJ.Plan.refresh();
+});
+await sleep(1200);
+ok('恢复后实时数据回来', (await txt('#plSummary')).indexOf('已自动降级') === -1, (await txt('#plSummary')).slice(0, 60));
+/* 安卓实体返回键 = history.back()，应先关详情页而不是退出 */
+await page.goBack();
+await sleep(900);
+ok('安卓返回键可关闭详情页', await page.$eval('#page-plan', (el) => !el.classList.contains('on')));
+ok('返回后仍停留在去哪页', await page.$eval('#page-go', (el) => el.classList.contains('on')));
+
+/* 历史 */
 await page.evaluate(() => document.querySelector('.hist-row').click());
 await sleep(900);
 ok('点击历史可重新查询', (await cnt('.plan-card')) === 1);
@@ -323,20 +494,14 @@ const histDbg = await page.evaluate(() => ({ store: ZJ.Store.get('zjbus.history.
 ok('可删除单条历史', histDbg.rows === 0, JSON.stringify(histDbg));
 
 /* 相同起终点 */
-await clickAct('pick-to');
-await sleep(400);
-await page.evaluate(() => document.querySelector('.sheet-tab[data-tab="search"]').click());
-await sleep(250);
-await page.type('#pkQ', '火车站');
-await sleep(400);
-await page.evaluate(() => document.querySelector('#pkList .pick-stop').click());
+await pickStation('pick-to', '火车站');
 await sleep(800);
 ok('起终点相同时给出提示', (await txt('#toast')).indexOf('不能') > -1, await txt('#toast'));
 
-/* 边界：搜索无结果 + 网络异常 + 定位失败，放到新页面执行 */
+/* ---------------- 13. 边界场景 ---------------- */
 section('边界场景');
 
-/* 11.1 站点搜索无结果 */
+/* 13.1 站点搜索无结果 */
 await page.evaluate(() => ZJ.setTab('go'));
 await clickAct('pick-from');
 await sleep(400);
@@ -348,7 +513,33 @@ ok('站名搜索无结果有提示', (await txt('#pkList')).indexOf('没有找�
 await page.evaluate(() => ZJ.UI.closeSheet());
 await sleep(400);
 
-/* 11.2 网络异常：线路页降级为静态数据 */
+/* 13.2 无直达线路：应给出换乘方案，或给出友好空态 */
+const noDirect = await page.evaluate(() => {
+  const sts = ZJ.Data.stations;
+  const hasDirect = (a, b) => a.entries.some((x) => b.entries.some((y) => x.dir === y.dir && y.order > x.order));
+  for (let i = 0; i < sts.length; i++) {
+    const a = sts[i];
+    if (!a.entries.length || a.entries.length > 4) continue;
+    for (let j = i + 1; j < Math.min(sts.length, i + 400); j++) {
+      const b = sts[j];
+      if (b.name === a.name || !b.entries.length) continue;
+      if (!hasDirect(a, b) && !hasDirect(b, a)) return { from: a.name, to: b.name };
+    }
+  }
+  return null;
+});
+if (noDirect) {
+  await pickStation('pick-from', noDirect.from);
+  await pickStation('pick-to', noDirect.to);
+  await sleep(1400);
+  const resTxt = await txt('#planResult');
+  const kind = resTxt.indexOf('暂无可用方案') > -1 ? '空态' : /换乘/.test(resTxt) ? '换乘方案' : '未知';
+  ok('无直达线路时有换乘方案或空态提示', kind !== '未知', noDirect.from + '→' + noDirect.to + ' :: ' + kind + ' :: ' + resTxt.slice(0, 40));
+} else {
+  ok('无直达线路时有换乘方案或空态提示', false, '未找到无直达站点对');
+}
+
+/* 13.3 网络异常：线路页降级为静态数据 */
 await page.evaluate(() => {
   ZJ.Api.vehicles = async () => { throw new Error('网络异常，请检查网络'); };
   ZJ.Api.lineDetail = async () => { throw new Error('网络异常'); };
@@ -356,16 +547,21 @@ await page.evaluate(() => {
   ZJ.setTab('home');
   document.querySelector('.line-row[data-name="1路"]').click();
 });
-await sleep(1400);
+await sleep(1600);
 const errStat = await txt('#lineStat');
 ok('网络异常时显示错误卡', errStat.indexOf('实时车辆暂不可用') > -1, errStat.slice(0, 60));
 ok('错误卡提供重试按钮', await has('[data-act="line-refresh"]'));
-ok('静态站序仍可用', (await cnt('.stop-row')) > 10, String(await cnt('.stop-row')));
+ok('顶部显示降级提示条', (await txt('#lineBanner')).indexOf('自动降级') > -1, (await txt('#lineBanner')).slice(0, 60));
+ok('静态站序仍可用', (await cnt('.vt-row')) > 10, String(await cnt('.vt-row')));
+ok('静态站点条仍可横向滑动', (await page.evaluate(() => {
+  const sc = document.getElementById('tlScroll');
+  return sc.scrollWidth > sc.clientWidth;
+})));
 ok('页脚说明静态兜底', (await txt('#lineNote')).indexOf('静态') > -1, await txt('#lineNote'));
 await page.evaluate(() => ZJ.Line.close());
 await sleep(500);
 
-/* 11.3 定位失败：新页面不给定位权限 */
+/* 13.4 定位失败：新页面拒绝定位权限 */
 const page2 = await browser.newPage();
 await page2.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 await page2.evaluateOnNewDocument(() => {
@@ -373,22 +569,21 @@ await page2.evaluateOnNewDocument(() => {
 });
 await page2.goto(BASE, { waitUntil: 'networkidle2' });
 await sleep(1600);
-const failTxt = await page2.$eval('#nearbyList', (el) => el.textContent);
-ok('定位失败有提示', failTxt.indexOf('定位失败') > -1, failTxt.replace(/\s+/g, ' ').slice(0, 60));
-ok('定位失败提供重试', await page2.$('[data-act="relocate"]').then((x) => !!x));
-ok('定位失败胶囊文案', (await page2.$eval('#homeLocTxt', (el) => el.textContent)) === '定位失败');
+ok('定位失败不影响首页渲染', (await page2.$$eval('.line-row', (e) => e.length)) > 10);
+ok('定位失败状态被记录', (await page2.evaluate(() => ZJ.Geo.state)) === 'fail', await page2.evaluate(() => ZJ.Geo.state));
+ok('定位失败无附近站点残留', (await page2.$$('#nearbyList, .nb-row')).length === 0);
 const failScroll = await page2.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
 ok('定位失败页无横向溢出', failScroll.sw <= failScroll.iw + 1, JSON.stringify(failScroll));
 await page2.close();
 
-/* ---------------- 12. 移动端适配 & 需求剔除检查 ---------------- */
+/* ---------------- 14. 移动端适配 & 需求剔除 ---------------- */
 section('移动端适配与功能边界');
 await page.evaluate(() => { ZJ.setTab('home'); });
 await sleep(400);
 for (const tab of ['home', 'go']) {
   await page.evaluate((t) => ZJ.setTab(t), tab);
   await sleep(350);
-  const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, bw: document.body.scrollWidth }));
+  const m = await overflow();
   ok(tab + ' 页无横向溢出', m.sw <= m.iw + 1, JSON.stringify(m));
 }
 const forbidden = await page.evaluate(() => {

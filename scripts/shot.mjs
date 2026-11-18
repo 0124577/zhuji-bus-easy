@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:8899/index.html';
-const OUT = process.env.SHOT_DIR || 'C:/work/bus/_tmp/shots';
+const OUT = process.env.SHOT_DIR || 'assets/screenshots';
 fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -22,48 +22,52 @@ await page.reload({ waitUntil: 'networkidle2' });
 await sleep(2200);
 await page.screenshot({ path: `${OUT}/01-home.png` });
 
-// 模拟实时车辆（等车站为第 11 站，最近车辆在第 10 站，剩 1 站）
+/* 模拟实时车辆：等车站第 11 站，最近车辆在第 10 站驶向第 11 站，剩 1 站 */
 await page.evaluate(() => {
   const dir = ZJ.Data.lineOf('23路').dirs[0];
   const st = dir.stops[10];
   window.__st = st.name;
-  const v = (order, distance, arrived, plate) => ({ vehicleOrder: order, distance, isArriveStation: arrived ? 1 : 0, plateNumber: plate, gpsTime: '2026-11-18 18:46:20', lat: dir.stops[order - 1].lat, lng: dir.stops[order - 1].lng });
-  ZJ.Api.vehicles = async () => ({ busAverageSpeed: 240, list: [v(10, 380, 0, '浙D08578D'), v(24, 60, 1, '浙D06666D')], startTime: '', static: false });
+  const v = (order, distance, arrived, plate) => ({ vehicleOrder: order, distance, isArriveStation: arrived ? 1 : 0, plateNumber: plate, gpsTime: '2026-11-18 20:20:00' });
+  ZJ.Api.vehicles = async () => ({ busAverageSpeed: 240, list: [v(12, 380, 0, '浙D08578D'), v(26, 60, 1, '浙D06666D')], startTime: '', static: false });
   ZJ.Api.lineDetail = async () => ({ lineName: '23路', up: { totalPrice: 1.0 } });
   ZJ.Api.plan = async () => ['06:20', '06:37', '07:00', '07:25', '08:05', '17:30', '18:00'];
   window.__vibrate = [];
   navigator.vibrate = (p) => { window.__vibrate.push(p); return true; };
   ZJ.Line.open('23路', 'up', st.name);
 });
-await sleep(1300);
+await sleep(1400);
 await page.screenshot({ path: `${OUT}/02-line-live.png` });
 
-await page.evaluate(() => { document.querySelector('#page-line').scrollTop = 330; });
-await sleep(500);
-await page.screenshot({ path: `${OUT}/03-line-stops.png` });
+/* 竖向时间轴（大字版） */
+await page.evaluate(() => { document.querySelector('#page-line').scrollTop = 700; });
+await sleep(600);
+await page.screenshot({ path: `${OUT}/03-line-vertical.png` });
 
+/* 提醒弹层 + 触发弹窗 */
+await page.evaluate(() => { document.querySelector('#page-line').scrollTop = 0; });
+await sleep(300);
 await page.evaluate(() => document.querySelector('[data-act="line-remind"]').click());
-await sleep(700);
-await page.screenshot({ path: `${OUT}/04-remind-sheet.png` });
+await sleep(800);
+await page.screenshot({ path: `${OUT}/04-alert-sheet.png` });
 await page.evaluate(() => document.querySelector('.rm-mode[data-mode="one"]').click());
 await sleep(200);
 await page.evaluate(() => document.querySelector('[data-act="rm-save"]').click());
-await sleep(1300);
-await page.screenshot({ path: `${OUT}/05-remind-alert.png` });
-await page.evaluate(() => { document.getElementById('rmGo').click(); });
+await sleep(1500);
+await page.screenshot({ path: `${OUT}/05-alert.png` });
+await page.evaluate(() => { const b = document.getElementById('rmGo'); if (b) b.click(); });
 
-// 站点页（真实接口）
+/* 站点页（真实接口） */
 await page.evaluate(() => { ZJ.Line.close(); });
 await page.waitForFunction(() => !document.querySelector('.fullpage.on'));
-await sleep(300);
+await sleep(400);
 await page.evaluate(() => ZJ.Station.open('火车站'));
 await sleep(3600);
 await page.screenshot({ path: `${OUT}/06-station.png` });
 
-// 去哪：真实交互选站
+/* 去哪：真实交互选站 */
 await page.evaluate(() => { ZJ.Station.close(); ZJ.setTab('go'); });
 await page.waitForFunction(() => !document.querySelector('.fullpage.on'));
-await sleep(400);
+await sleep(500);
 await page.evaluate(() => document.querySelector('[data-act="pick-from"]').click());
 await sleep(400);
 await page.evaluate(() => document.querySelector('.sheet-tab[data-tab="search"]').click());
@@ -80,16 +84,22 @@ await sleep(300);
 await page.type('#pkQ', '草塔停车场');
 await sleep(450);
 await page.evaluate(() => document.querySelector('#pkList .pick-stop').click());
-await sleep(1200);
+await sleep(1400);
 await page.screenshot({ path: `${OUT}/08-go-plans.png` });
-await page.evaluate(() => window.scrollTo(0, 480));
-await sleep(400);
-await page.screenshot({ path: `${OUT}/09-go-history.png` });
 
-// 首页提醒卡片
-await page.evaluate(() => ZJ.setTab('home'));
+/* 方案详情（分段实时 + 竖向时间轴） */
+await page.evaluate(() => document.querySelector('.plan-cardlink').click());
+await sleep(1700);
+await page.screenshot({ path: `${OUT}/09-plan-live.png` });
+await page.evaluate(() => { document.querySelector('#page-plan').scrollTop = 620; });
 await sleep(600);
-await page.screenshot({ path: `${OUT}/10-home-remind.png` });
+await page.screenshot({ path: `${OUT}/10-plan-vertical.png` });
 
-console.log('shots done', await page.evaluate(() => window.__vibrate));
+/* 首页提醒卡片 */
+await page.evaluate(() => { ZJ.Plan.close(); ZJ.setTab('home'); });
+await page.waitForFunction(() => !document.querySelector('.fullpage.on'));
+await sleep(700);
+await page.screenshot({ path: `${OUT}/11-home-remind.png` });
+
+console.log('shots done →', OUT);
 await browser.close();

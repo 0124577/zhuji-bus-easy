@@ -48,6 +48,8 @@
     return {
       line: dir.line,
       dir: dir,
+      fromOrder: fromOrder,
+      toOrder: toOrder,
       from: dir.stops[fromOrder - 1].name,
       to: dir.stops[toOrder - 1].name,
       stops: toOrder - fromOrder,
@@ -187,11 +189,12 @@
     }).join('');
     $('planResult').innerHTML =
       '<div class="plan-tabs">' + tabs + '</div>' +
-      '<div class="plan-card">' +
+      '<div class="plan-card plan-cardlink" data-act="plan-open">' +
       '<div class="plan-sum"><div class="big">' + p.total + '<small>分钟</small></div>' +
       '<div class="meta">预计 ' + ZJ.minHM(ZJ.nowMin() + p.total) + ' 到达「' + ZJ.esc(G.to) + '」<br>乘车 ' + p.ride + ' 分钟' + (p.transfers ? ' · 换乘预留 ' + p.transfers * 5 + ' 分钟' : '') + '</div>' +
       '<div class="kind">' + (p.transfers === 0 ? '直达' : '换乘 ' + p.transfers + ' 次') + '</div></div>' +
       legs +
+      '<div class="plan-more">查看分段实时公交与到站提醒<svg class="ico"><use href="#i-right"/></svg></div>' +
       '<p class="sheet-note" style="margin:10px 0 0">耗时按线路静态里程与平均速度估算，不含步行与等车时间，仅供参考。</p>' +
       '</div>';
   }
@@ -266,7 +269,14 @@
     renderSelectors();
     ZJ.toast('起点已设为「' + G.from + '」');
   });
-  ZJ.act('plan-idx', (el) => { G.idx = +el.dataset.i; renderPlans(); });
+  ZJ.act('plan-idx', (el, e) => { if (e) e.stopPropagation(); G.idx = +el.dataset.i; renderPlans(); });
+  ZJ.act('plan-open', (el, e) => {
+    if (e && e.target.closest('.plan-tab')) return;
+    const p = G.plans[G.idx] || G.plans[0];
+    if (!p) { ZJ.toast('请先生成出行方案'); return; }
+    if (!ZJ.Plan || !ZJ.Plan.open) { ZJ.toast('方案详情暂不可用'); return; }
+    ZJ.Plan.open(p, G.from, G.to);
+  });
   ZJ.act('hist-open', (el) => {
     const h = history()[+el.dataset.i];
     if (!h) return;

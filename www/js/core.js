@@ -214,6 +214,190 @@
     }
   };
 
+  /* ================= 运营时段判断 ================= */
+  ZJ.isInService = function (dir) {
+    if (!dir) return true;
+    const toMin = (t) => {
+      const m = String(t || '').match(/(\d{1,2}):(\d{2})/);
+      return m ? +m[1] * 60 + +m[2] : 0;
+    };
+    const f = toMin(dir.first), l = toMin(dir.last);
+    if (!f && !l) return true;
+    const now = ZJ.nowMin();
+    if (l < f) return now >= f || now <= l;
+    return now >= f - 10 && now <= l + 45;
+  };
+
+  /* ================= 横向站点时间轴（竖屏 · 竖排站名 · 左右滚动） =================
+     html(dir, opt) 返回 .tl 内部 HTML；mount(dir, opt) 负责挂载、设宽并滚动到焦点站。
+     opt: { el, selected, board, alight, vehicles, step, pad, focus, hint }
+     序号一律使用 1 基站序（与静态数据 st.o 一致）
+  */
+  const Timeline = {
+    width(dir, opt) {
+      const step = (opt && opt.step) || 72;
+      const pad = (opt && opt.pad) || 24;
+      return (dir.stops.length - 1) * step + pad * 2;
+    },
+    html(dir, opt) {
+      opt = opt || {};
+      const step = opt.step || 72;
+      const pad = opt.pad || 24;
+      const sel = opt.selected || 0;
+      const board = opt.board || 0;
+      const alight = opt.alight || 0;
+      const vehicles = opt.vehicles || [];
+      let html = '<div class="tl-bar"><div class="tl-chev"></div></div>';
+      dir.stops.forEach((s, i) => {
+        const o = s.o;
+        let cls = '';
+        if (board && o === board) cls = 'sel';
+        else if (alight && o === alight) cls = 'alight';
+        else if (sel && o === sel) cls = 'sel';
+        else if ((board && o < board) || (!board && sel && o < sel)) cls = 'passed';
+        const nm = s.name.length > 9 ? s.name.slice(0, 8) + '…' : s.name;
+        html += '<div class="tl-item ' + cls + '" style="left:' + (pad + i * step) + 'px" data-act="' +
+          (opt.stopAct || 'noop') + '" data-station="' + ZJ.esc(s.name) + '" data-order="' + o + '">' +
+          '<span class="tl-no">' + o + '</span><span class="tl-dot"></span>' +
+          '<span class="tl-nm">' + ZJ.esc(nm) + '</span></div>';
+      });
+      if (vehicles.length) {
+        vehicles.slice(0, 8).forEach((v) => {
+          const left = pad + Math.max(0, Math.min(dir.stops.length - 1, v.pos)) * step;
+          html += '<div class="tl-bus" style="left:' + left.toFixed(1) + 'px" data-act="bus-tip" data-plate="' + ZJ.esc(v.plate) + '">' +
+            '<span class="bub"><svg class="ico"><use href="#i-bus"/></svg></span><span class="pin"></span></div>';
+        });
+      }
+      return html;
+    },
+    /* 挂载并滚动到焦点站（1 基序号），opt.el 为 .tl 容器
+       opt.restore 传入已有 scrollLeft 时保持用户当前横向位置（轮询刷新不跳动） */
+    mount(dir, opt) {
+      opt = opt || {};
+      const el = opt.el;
+      if (!el) return;
+      const step = opt.step || 72;
+      const pad = opt.pad || 24;
+      el.style.width = Timeline.width(dir, opt) + 'px';
+      el.innerHTML = Timeline.html(dir, opt);
+      const focus = opt.focus || opt.selected || opt.board || 1;
+      const sc = el.parentNode;
+      if (!sc) return;
+      if (opt.restore != null && opt.restore > 0) {
+        sc.scrollLeft = opt.restore;
+        return;
+      }
+      const target = pad + (focus - 1) * step - sc.clientWidth / 2;
+      requestAnimationFrame(() => { sc.scrollLeft = Math.max(0, target); });
+    },
+    /* 把某站滚动到视野中央 */
+    center(scroller, order, opt) {
+      if (!scroller) return;
+      const step = (opt && opt.step) || 72;
+      const pad = (opt && opt.pad) || 24;
+      scroller.scrollTo({ left: Math.max(0, pad + (order - 1) * step - scroller.clientWidth / 2), behavior: 'smooth' });
+    },
+    /* 左右滑动提示：是否还有更多内容 */
+    edges(scroller) {
+      if (!scroller) return { left: false, right: false };
+      return {
+        left: scroller.scrollLeft > 4,
+        right: scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4
+      };
+    },
+    /* 绑定滚动提示：滚动到两端时更新提示文字 */
+    bindHint(scroller, hintEl) {
+      if (!scroller || !hintEl || scroller.dataset.hintBound) return;
+      scroller.dataset.hintBound = '1';
+      const total = hintEl.dataset.total || '';
+      const upd = () => {
+        const e = Timeline.edges(scroller);
+        if (!e.left && !e.right) hintEl.textContent = total ? '共 ' + total + ' 站 · 已显示全程' : '已显示全程';
+        else if (!e.left) hintEl.textContent = (total ? '共 ' + total + ' 站 · ' : '') + '向右滑动查看后续 →';
+        else if (!e.right) hintEl.textContent = '← 向左滑动回看前序站点';
+        else hintEl.textContent = (total ? '共 ' + total + ' 站 · ' : '') + '← 左右滑动浏览全程 →';
+      };
+      scroller.addEventListener('scroll', upd, { passive: true });
+      requestAnimationFrame(upd);
+    }
+  };
+  ZJ.Timeline = Timeline;
+
+  /* ================= 竖向时间轴（大字版 · 老年友好） =================
+     与横向时间轴内容一致，但站名更大、行高更高、提醒按钮更大，便于长者阅读点按。
+     opt: { selected, board, alight, vehicles, err, range:[from,to], line, dirKey,
+            bellAct, bellClass, staticEta(order), hintAct }
+  */
+  const VTimeline = {
+    html(dir, opt) {
+      opt = opt || {};
+      const vehicles = opt.vehicles || [];
+      const sel = opt.selected || 0;
+      const board = opt.board || 0;
+      const alight = opt.alight || 0;
+      const bellAct = opt.bellAct || 'stop-remind';
+      const hasLive = vehicles.length > 0 && !opt.err;
+      const from = opt.range ? opt.range[0] : 1;
+      const to = opt.range ? opt.range[1] : dir.stops.length;
+      const rows = [];
+      dir.stops.forEach((s) => {
+        const o = s.o;
+        if (o < from || o > to) return;
+        let cls = '';
+        if (board && o === board) cls += ' board';
+        if (alight && o === alight) cls += ' alight';
+        if (sel && o === sel && !board) cls += ' sel';
+        if (board && o < board) cls += ' passed';
+
+        let tag = '';
+        if (board && o === board) tag = '<i class="vt-tag">上车站</i>';
+        else if (alight && o === alight) tag = '<i class="vt-tag green">下车站</i>';
+
+        /* 车辆标记：该站有车停靠 / 正在驶向下一站 */
+        let bus = '';
+        const here = vehicles.filter((v) => v.order === o);
+        if (here.length) {
+          const v = here[0];
+          bus = '<span class="vt-bus"><svg class="ico"><use href="#i-bus"/></svg>' +
+            (v.arrived ? '车辆停靠本站' : '车辆正在本站 → 下一站') + (here.length > 1 ? ' ×' + here.length : '') + '</span>';
+        }
+
+        /* 预计到站：本站已有车辆时只显示车辆徽标，避免重复 */
+        let eta = '';
+        if (hasLive && here.length) {
+          eta = '';
+        } else if (hasLive) {
+          const arr = ZJ.RT.arrivalsTo(dir, vehicles, o);
+          const b = arr[0];
+          if (b) eta = '<span class="vt-eta live">' + (b.atStation ? '车辆已到站' : '还有 ' + b.remain + ' 站 · 约 ' + b.minutes + ' 分钟') + '</span>';
+          else {
+            const ahead = vehicles.some((v) => v.order > o || (v.order === o && !v.arrived));
+            eta = '<span class="vt-eta' + (ahead ? ' dim' : '') + '">' + (ahead ? '车辆已过站' : '—') + '</span>';
+          }
+        } else if (typeof opt.staticEta === 'function') {
+          eta = '<span class="vt-eta">' + ZJ.esc(opt.staticEta(o)) + '</span>';
+        } else {
+          eta = '<span class="vt-eta">约 ' + ZJ.Data.rideMinutes(dir, from, o) + ' 分钟（静态）</span>';
+        }
+
+        const rm = opt.line && opt.dirKey ? ZJ.Reminder.find(opt.line, opt.dirKey, s.name) : null;
+        const bell = opt.bell === false ? '' :
+          '<button class="' + (opt.bellClass || 'vt-bell') + (rm ? ' on' : '') + '" data-act="' + bellAct +
+          '" data-station="' + ZJ.esc(s.name) + '" data-order="' + o +
+          '"' + (opt.line ? ' data-line="' + ZJ.esc(opt.line) + '"' : '') + (opt.dirKey ? ' data-dir="' + ZJ.esc(opt.dirKey) + '"' : '') +
+          ' aria-label="到站提醒"><svg class="ico"><use href="#i-bell"/></svg></button>';
+
+        rows.push('<div class="vt-row' + cls + '" data-act="' + (opt.rowAct || 'stop') + '" data-station="' + ZJ.esc(s.name) + '" data-order="' + o + '">' +
+          '<span class="vt-axis"><i class="vt-dot"></i></span>' +
+          '<div class="vt-body"><div class="vt-top"><b class="vt-name">' + ZJ.esc(s.name) + '</b>' + tag + '</div>' +
+          '<div class="vt-meta"><span class="vt-no">第 ' + o + ' 站</span>' + eta + bus + '</div></div>' +
+          bell + '</div>');
+      });
+      return rows.join('');
+    }
+  };
+  ZJ.VTimeline = VTimeline;
+
   /* ================= 收藏 ================= */
   const FAV_L_KEY = 'zjbus.fav.lines.v1';
   const FAV_S_KEY = 'zjbus.fav.stations.v1';

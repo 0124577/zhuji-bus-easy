@@ -35,23 +35,53 @@
     });
   }
 
+  /* 接口健康度：连续失败即视为实时能力不可用，页面据此自动降级为静态数据 */
+  const health = { fails: 0, lastError: '', degraded: false, lastOk: 0, lastFail: 0 };
+  function markOk() {
+    if (health.fails || health.degraded) health.lastOk = Date.now();
+    health.fails = 0;
+    health.degraded = false;
+    health.lastError = '';
+  }
+  function markFail(e) {
+    health.fails++;
+    health.lastError = (e && e.message) || '网络异常';
+    health.lastFail = Date.now();
+    if (health.fails >= 2) health.degraded = true;
+  }
+
   async function postRetry(path, body) {
     try {
-      return await post(path, body);
+      const r = await post(path, body);
+      markOk();
+      return r;
     } catch (e) {
       if (/未联网|网络异常|超时/.test(e.message)) {
         await new Promise((r) => setTimeout(r, 350));
-        return post(path, body);
+        try {
+          const r2 = await post(path, body);
+          markOk();
+          return r2;
+        } catch (e2) {
+          markFail(e2);
+          throw e2;
+        }
       }
+      markFail(e);
       throw e;
     }
   }
 
   const Api = {
     get mode() { return mode; },
+    /* 实时接口是否已降级（连续 2 次请求失败） */
+    get degraded() { return health.degraded; },
+    get health() { return { fails: health.fails, lastError: health.lastError, degraded: health.degraded, lastOk: health.lastOk }; },
+    resetHealth() { health.fails = 0; health.degraded = false; health.lastError = ''; },
     setMode(m) {
       mode = m === 'static' ? 'static' : 'api';
       ZJ.Store.set('zjbus.datamode', mode);
+      if (mode === 'api') Api.resetHealth();
     },
     /* 线路详情（含站点序列、首末班、票价）—— 官方接口按 lineId 查询 */
     async lineDetail(dirId) {

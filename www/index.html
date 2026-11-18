@@ -38,9 +38,6 @@
           <h1>诸暨公交</h1>
           <p>实时到站 · 换乘查询 · 到站提醒</p>
         </div>
-        <button class="loc-chip" id="homeLoc" data-act="locate">
-          <svg class="ico"><use href="#i-locate"/></svg><span id="homeLocTxt">定位中</span>
-        </button>
       </div>
       <div class="searchbar">
         <svg class="ico"><use href="#i-search"/></svg>
@@ -52,14 +49,6 @@
     </header>
 
     <div class="home-body">
-      <section class="card" id="nearbyCard">
-        <div class="card-h">
-          <b>附近站点</b>
-          <button class="mini" data-act="relocate">重新定位</button>
-        </div>
-        <div id="nearbyList" class="nearby-list"></div>
-      </section>
-
       <section class="card fav-card" id="favCard">
         <div class="card-h"><b>我的收藏</b><span class="mini-txt" id="favCount"></span></div>
         <div id="favBody"></div>
@@ -80,7 +69,7 @@
         </div>
         <div class="line-list" id="lineList"></div>
       </section>
-      <p class="foot-note">站点与线路为本地静态数据，车辆位置来自诸暨公交官方实时接口<br>无地图渲染 · 定位仅用于计算附近站点</p>
+      <p class="foot-note">站点与线路为本地静态数据，车辆位置来自诸暨公交官方实时接口<br>无地图渲染 · 定位仅用于「去哪」的“我的位置”</p>
     </div>
   </main>
 
@@ -149,6 +138,7 @@
     </header>
 
     <div class="line-body">
+      <div id="lineBanner"></div>
       <section class="card line-info" id="lineInfo"></section>
       <section class="stat-card" id="lineStat"></section>
 
@@ -160,19 +150,41 @@
         <div class="tl-scroll" id="tlScroll">
           <div class="tl" id="tl"></div>
         </div>
+        <div class="tl-hint"><span id="tlHint">← 左右滑动浏览整条线路 →</span></div>
       </section>
 
       <section class="mystop-bar" id="myStopBar"></section>
 
       <section class="stop-sec">
         <div class="sec-h">
-          <b>途经站点</b>
+          <b>竖向时间轴（大字）</b>
           <span class="sec-hint" id="stopHint"></span>
         </div>
-        <div class="stop-list" id="stopList"></div>
+        <div class="vt" id="stopList"></div>
       </section>
 
       <p class="foot-note" id="lineNote">计划班次与到站时间为静态数据估算，仅供参考，受路况影响</p>
+    </div>
+  </section>
+
+  <!-- ================= 换乘方案详情页（分段实时公交） ================= -->
+  <section class="fullpage" id="page-plan">
+    <header class="line-hdr plan-hdr">
+      <button class="line-back" data-act="plan-back" aria-label="返回">
+        <svg class="ico"><use href="#i-back"/></svg>
+      </button>
+      <div class="line-hdr-t">
+        <b id="plTitle">出行方案</b>
+        <span id="plSub">—</span>
+      </div>
+      <button class="line-hbtn" data-act="plan-refresh" aria-label="刷新实时数据">
+        <svg class="ico"><use href="#i-refresh"/></svg>
+      </button>
+    </header>
+    <div class="line-body">
+      <div id="plSummary"></div>
+      <div id="plLegs"></div>
+      <p class="foot-note" id="plNote">分段实时数据来自诸暨公交官方接口，暂无在线车辆时按静态里程估算</p>
     </div>
   </section>
 
@@ -222,6 +234,7 @@
 <script src="js/picker.js"></script>
 <script src="js/line.js"></script>
 <script src="js/station.js"></script>
+<script src="js/plan.js"></script>
 <script src="js/go.js"></script>
 <script src="js/home.js"></script>
 <script src="js/app.js"></script>
