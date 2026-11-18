@@ -1,0 +1,9 @@
+{
+  "appId": "com.zhuji.bus.lite",
+  "appName": "诸暨公交",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": { "androidScheme": "http" },
+  "android": { "allowMixedContent": true },
+  "plugins": {}
+}

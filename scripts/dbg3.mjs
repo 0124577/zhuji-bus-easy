@@ -1,0 +1,16 @@
+import puppeteer from 'puppeteer-core';
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const b=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:'new',args:['--no-sandbox']});
+const p=await b.newPage();
+await p.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+p.on('pageerror',e=>console.log('ERR',e.message));
+await p.goto('http://127.0.0.1:8899/index.html',{waitUntil:'networkidle2'});
+await p.evaluate(()=>{ localStorage.setItem('zjbus.history.v1', JSON.stringify([{from:'火车站',to:'草塔停车场',ts:Date.now()}])); ZJ.setTab('go'); });
+await sleep(500);
+await p.evaluate(()=>document.querySelector('.hist-row').click());
+await sleep(900);
+console.log('after hist-open store', await p.evaluate(()=>ZJ.Store.get('zjbus.history.v1',[]).length));
+await p.evaluate(()=>document.querySelector('.hist-del').click());
+await sleep(500);
+console.log('after del', await p.evaluate(()=>({store:ZJ.Store.get('zjbus.history.v1',[]).length, rows:document.querySelectorAll('.hist-row').length, toast:document.getElementById('toast').textContent})));
+await b.close();
