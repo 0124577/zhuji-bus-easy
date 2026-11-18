@@ -21,6 +21,37 @@
     return d.vehicles.length ? ZJ.RT.arrivalsTo(leg.dir, d.vehicles, leg.fromOrder) : [];
   }
 
+  /* 各段中「最快到上车站」的一辆，用于顶部高亮条 */
+  function soonest() {
+    let best = null;
+    P.plan.legs.forEach((leg, i) => {
+      const b = arrivals(leg)[0];
+      if (!b) return;
+      const remain = b.atStation ? 0 : b.remain;
+      if (!best || remain < best.remain) {
+        best = {
+          remain: remain, minutes: b.minutes, atStation: !!b.atStation,
+          plate: b.v.plate || '', leg: leg, idx: i
+        };
+      }
+    });
+    return best;
+  }
+
+  /* 顶部「还剩几站」高亮条：老年用户最先要看的一条信息 */
+  function liveHl() {
+    const s = soonest();
+    if (!s) return '';
+    const eta = s.atStation ? '车已到站，请上车' : '约 ' + s.minutes + ' 分钟到站';
+    return '<div class="pl-hl" data-act="pl-hl" data-idx="' + s.idx + '">' +
+      '<div class="pl-hl-l"><span class="pl-hl-txt">' + (s.remain === 0 ? '车已到' : '还有') + '</span>' +
+      '<span class="pl-hl-num">' + s.remain + '<em>站</em></span></div>' +
+      '<div class="pl-hl-r"><b>' + eta + ' · 「' + ZJ.esc(s.leg.from) + '」</b>' +
+      '<span><i class="live-dot"></i>' + ZJ.esc(s.leg.line) + ' · 第 ' + (s.idx + 1) + ' 段' +
+      (s.plate ? ' · ' + ZJ.esc(s.plate) : '') + '</span></div>' +
+      '</div>';
+  }
+
   /* ---------------- 汇总 ---------------- */
   function renderSummary() {
     const p = P.plan;
@@ -43,7 +74,7 @@
         '<button data-act="plan-refresh">刷新</button></div>';
     }
 
-    $('plSummary').innerHTML = banner +
+    $('plSummary').innerHTML = banner + liveHl() +
       '<section class="card pl-sum">' +
       '<div class="pl-sum-top"><div class="big">' + p.total + '<small>分钟</small></div>' +
       '<div class="pl-sum-meta"><b>' + ZJ.esc(P.from) + ' → ' + ZJ.esc(P.to) + '</b>' +
@@ -71,9 +102,10 @@
     const list = arrivals(leg);
     const best = list[0];
     if (best) {
+      const remain = best.atStation ? 0 : best.remain;
       const etaTxt = best.atStation ? '车辆已到上车站' : '约 ' + best.minutes + ' 分钟到上车站';
       return '<div class="pl-live">' +
-        '<div class="pl-live-main"><span class="pl-remain"><b>' + (best.atStation ? '0' : best.remain) + '</b>站</span>' +
+        '<div class="pl-live-main"><span class="pl-remain"><i>' + (remain === 0 ? '已到' : '还有') + '</i><b>' + remain + '</b><em>站</em></span>' +
         '<span class="pl-eta">' + ZJ.esc(etaTxt) + '</span></div>' +
         '<div class="pl-live-sub"><i class="live-dot"></i>' + ZJ.esc(best.v.plate || '车辆') + ' · ' + ZJ.esc(ZJ.RT.positionText(dir, best.v)) + '</div>' +
         '</div>';
@@ -236,5 +268,11 @@
       render(true);
       if (ZJ.Home) ZJ.Home.renderReminders();
     });
+  });
+  /* 点顶部高亮条 → 滚到对应乘车段 */
+  ZJ.act('pl-hl', (el) => {
+    const i = Number(el.dataset.idx) || 0;
+    const card = document.querySelectorAll('#plLegs .pl-leg')[i];
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 })();
