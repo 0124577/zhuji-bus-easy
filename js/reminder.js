@@ -169,5 +169,67 @@
     }
   };
 
+  /* ================= 提醒设置弹层（线路页 / 方案详情页共用） ================= */
+  let uiTarget = null;
+  let uiMode = 'one';
+  let uiDone = null;
+
+  function dirEndOf(target) {
+    const line = ZJ.Data.lineOf(target.line);
+    const dir = line && line.dirs.find((d) => d.key === target.dirKey);
+    return dir ? dir.end : '';
+  }
+
+  function sheetHtml(target, rm) {
+    const modes = Object.keys(MODES).map((k) => {
+      const m = MODES[k];
+      return '<button class="rm-mode ' + (k === uiMode ? 'on' : '') + '" data-act="rm-mode" data-mode="' + k + '">' +
+        '<span class="r-ico"><svg class="ico"><use href="#i-bell"/></svg></span>' +
+        '<span class="r-t"><b>' + m.label + '</b><span>' + m.desc + '</span></span>' +
+        '<span class="r-chk"></span></button>';
+    }).join('');
+    const end = dirEndOf(target);
+    return '<div class="sheet-h"><b>到站提醒</b><button class="sheet-x" data-act="close-sheet"><svg class="ico"><use href="#i-close"/></svg></button></div>' +
+      '<div class="sheet-body">' +
+      '<div class="st-summary" style="margin-bottom:12px"><b>' + ZJ.esc(target.line) + '</b>' +
+      (end ? '<span>往 ' + ZJ.esc(end) + '</span>' : '') +
+      '<span class="upd">' + ZJ.esc(target.station) + '</span></div>' +
+      '<div class="rm-modes">' + modes + '</div>' +
+      '<p class="sheet-note">提醒只在 App 打开时通过本地弹窗 + 震动触发，不发送系统推送、不在后台驻留。实时数据中断时提醒会暂停。</p>' +
+      '<button class="sheet-primary" data-act="rm-save">' + (rm ? '更新提醒方式' : '开启提醒') + '</button>' +
+      (rm ? '<button class="mini" style="width:100%;margin-top:10px;height:38px" data-act="rm-cancel">关闭该站提醒</button>' : '') +
+      '</div>';
+  }
+
+  /* target: { line, dirKey, station }；onDone: 设置变化后的回调 */
+  Reminder.openSheet = function (target, onDone) {
+    uiTarget = target;
+    uiDone = typeof onDone === 'function' ? onDone : null;
+    const rm = Reminder.find(target.line, target.dirKey, target.station);
+    uiMode = rm ? rm.mode : 'one';
+    ZJ.UI.sheet(sheetHtml(target, rm));
+  };
+
+  ZJ.act('rm-mode', (el) => {
+    uiMode = MODES[el.dataset.mode] ? el.dataset.mode : 'one';
+    const wrap = el.parentNode;
+    if (wrap) wrap.querySelectorAll('.rm-mode').forEach((n) => n.classList.toggle('on', n === el));
+  });
+  ZJ.act('rm-save', () => {
+    if (!uiTarget) return;
+    const rm = Reminder.add({ line: uiTarget.line, dirKey: uiTarget.dirKey, station: uiTarget.station, mode: uiMode });
+    ZJ.UI.closeSheet();
+    if (rm) ZJ.toast('已开启：' + MODES[rm.mode].label);
+    if (uiDone) uiDone();
+  });
+  ZJ.act('rm-cancel', () => {
+    if (!uiTarget) return;
+    const rm = Reminder.find(uiTarget.line, uiTarget.dirKey, uiTarget.station);
+    if (rm) Reminder.remove(rm.id);
+    ZJ.UI.closeSheet();
+    ZJ.toast('已关闭该站提醒');
+    if (uiDone) uiDone();
+  });
+
   ZJ.Reminder = Reminder;
 })();

@@ -1,0 +1,240 @@
+/* 换乘方案详情页：分段线路实时公交 + 站点级到站提醒 + 横向站点列表 */
+(function () {
+  const ZJ = window.ZJ;
+  const $ = ZJ.$;
+
+  const P = {
+    plan: null,
+    from: '',
+    to: '',
+    data: new Map(), /* dirId -> { vehicles, err, at, loading } */
+    req: 0,
+    timer: null
+  };
+
+  function legData(leg) {
+    return P.data.get(leg.dir.id) || { vehicles: [], err: '', at: 0, loading: !P.data.get(leg.dir.id) };
+  }
+
+  function arrivals(leg) {
+    const d = legData(leg);
+    return d.vehicles.length ? ZJ.RT.arrivalsTo(leg.dir, d.vehicles, leg.fromOrder) : [];
+  }
+
+  /* ---------------- 汇总 ---------------- */
+  function renderSummary() {
+    const p = P.plan;
+    const stops = p.legs.reduce((s, l) => s + l.stops, 0);
+    const arrive = ZJ.minHM(ZJ.nowMin() + p.total);
+    const anyErr = p.legs.some((l) => legData(l).err);
+    const noLive = p.legs.every((l) => !legData(l).vehicles.length);
+    const staticMode = ZJ.Api.mode === 'static';
+    const degraded = staticMode || anyErr;
+
+    let banner = '';
+    if (degraded) {
+      banner = '<div class="degrade-banner"><svg class="ico"><use href="#i-refresh"/></svg>' +
+        '<div><b>实时数据暂不可用，已自动降级</b><span>' +
+        (staticMode ? '当前为静态数据模式，站点、首末班、换乘方案照常可用' : '实时接口请求失败，已使用静态线路数据（站序 / 首末班 / 里程估算）') +
+        '</span></div><button data-act="plan-refresh">重试</button></div>';
+    } else if (noLive) {
+      banner = '<div class="degrade-banner soft"><svg class="ico"><use href="#i-bus"/></svg>' +
+        '<div><b>当前时段暂无在线车辆</b><span>已按静态里程与首末班估算，发车后自动更新</span></div>' +
+        '<button data-act="plan-refresh">刷新</button></div>';
+    }
+
+    $('plSummary').innerHTML = banner +
+      '<section class="card pl-sum">' +
+      '<div class="pl-sum-top"><div class="big">' + p.total + '<small>分钟</small></div>' +
+      '<div class="pl-sum-meta"><b>' + ZJ.esc(P.from) + ' → ' + ZJ.esc(P.to) + '</b>' +
+      '<span>约 ' + arrive + ' 到达 · 乘车 ' + p.ride + ' 分钟' + (p.transfers ? ' · 换乘预留 ' + p.transfers * 5 + ' 分钟' : '') + '</span></div></div>' +
+      '<div class="pl-sum-chips">' +
+      '<span class="tag pink">' + (p.transfers === 0 ? '直达' : '换乘 ' + p.transfers + ' 次') + '</span>' +
+      '<span class="tag">共 ' + stops + ' 站</span>' +
+      '<span class="tag">' + p.legs.length + ' 段行程</span>' +
+      '<span class="tag ' + (degraded || noLive ? '' : 'live') + '">' + (degraded ? '静态数据' : noLive ? '暂无在线车辆' : '实时更新中') + '</span>' +
+      '</div></section>';
+  }
+
+  /* ---------------- 单段卡片 ---------------- */
+  function liveBlock(leg) {
+    const d = legData(leg);
+    const dir = leg.dir;
+    if (d.loading && !d.at) {
+      return '<div class="pl-live"><div class="pl-live-loading"><span class="spin"></span>正在获取实时车辆…</div></div>';
+    }
+    if (d.err) {
+      return '<div class="pl-live err"><div class="pl-live-main"><b>实时数据不可用</b></div>' +
+        '<div class="pl-live-sub">' + ZJ.esc(d.err) + ' · 已按静态数据展示站点与首末班</div>' +
+        '<button class="pl-retry" data-act="plan-refresh">重新获取</button></div>';
+    }
+    const list = arrivals(leg);
+    const best = list[0];
+    if (best) {
+      const etaTxt = best.atStation ? '车辆已到上车站' : '约 ' + best.minutes + ' 分钟到上车站';
+      return '<div class="pl-live">' +
+        '<div class="pl-live-main"><span class="pl-remain"><b>' + (best.atStation ? '0' : best.remain) + '</b>站</span>' +
+        '<span class="pl-eta">' + ZJ.esc(etaTxt) + '</span></div>' +
+        '<div class="pl-live-sub"><i class="live-dot"></i>' + ZJ.esc(best.v.plate || '车辆') + ' · ' + ZJ.esc(ZJ.RT.positionText(dir, best.v)) + '</div>' +
+        '</div>';
+    }
+    const inService = ZJ.isInService(dir);
+    const head = inService ? '此刻暂无开往上车站的车辆' : '已收班';
+    const sub = inService
+      ? '本段按静态里程估算乘车约 ' + leg.minutes + ' 分钟，稍后自动刷新'
+      : '运营时段 ' + ZJ.esc(dir.first) + ' – ' + ZJ.esc(dir.last) + ' · 静态估算乘车约 ' + leg.minutes + ' 分钟';
+    return '<div class="pl-live empty"><div class="pl-live-main"><b>' + ZJ.esc(head) + '</b></div>' +
+      '<div class="pl-live-sub">' + sub + '</div></div>';
+  }
+
+  /* 竖向时间轴（大字版）：仅渲染本段上车站 → 下车站，老年友好 */
+  function vRows(leg) {
+    const d = legData(leg);
+    return ZJ.VTimeline.html(leg.dir, {
+      board: leg.fromOrder,
+      alight: leg.toOrder,
+      vehicles: d.vehicles,
+      err: d.err,
+      range: [leg.fromOrder, leg.toOrder],
+      line: leg.line,
+      dirKey: leg.dir.key,
+      rowAct: 'noop',
+      bellAct: 'pl-bell',
+      bellClass: 'pl-bell',
+      staticEta: (o) => '静态约 ' + Math.max(1, Math.round(ZJ.Data.rideMeters(leg.dir, leg.fromOrder, o) / ZJ.CFG.AVG_SPEED + (o - leg.fromOrder) * ZJ.CFG.DWELL)) + ' 分钟'
+    });
+  }
+
+  function renderLegs() {
+    const p = P.plan;
+    $('plLegs').innerHTML = p.legs.map((leg, i) => {
+      const d = legData(leg);
+      const isLast = i === p.legs.length - 1;
+      return '<section class="card pl-leg">' +
+        '<div class="pl-leg-h"><span class="leg-badge">' + ZJ.esc(leg.line) + '</span>' +
+        '<div class="pl-leg-t"><b>' + ZJ.esc(leg.from) + ' → ' + ZJ.esc(leg.to) + '</b>' +
+        '<span>往 ' + ZJ.esc(leg.dir.end) + ' · 乘 ' + leg.stops + ' 站 · 约 ' + leg.minutes + ' 分钟</span></div>' +
+        '<span class="pl-leg-idx">第 ' + (i + 1) + ' 段</span></div>' +
+        liveBlock(leg) +
+        '<div class="pl-hops">' +
+        '<div class="pl-hop"><span class="lab">上车站</span><b>' + ZJ.esc(leg.from) + '</b><span class="ord">第 ' + leg.fromOrder + ' 站</span></div>' +
+        '<div class="pl-hop"><span class="lab">下车站</span><b>' + ZJ.esc(leg.to) + '</b><span class="ord">第 ' + leg.toOrder + ' 站</span></div>' +
+        '</div>' +
+        '<div class="pl-strip-h"><b>线路站点</b><span class="tl-hint" id="plHint' + i + '" data-total="' + leg.dir.stops.length + '">左右滑动浏览</span></div>' +
+        '<div class="tl-scroll pl-strip" id="plSc' + i + '"><div class="tl tl-sm" id="plTl' + i + '"></div></div>' +
+        '<div class="pl-stops"><div class="pl-stops-h"><b>竖向时间轴 · 大字</b><span>点铃铛开关提醒</span></div>' +
+        '<div class="vt vt-plan">' + vRows(leg) + '</div></div>' +
+        (isLast
+          ? '<div class="pl-leg-foot">到 <b>' + ZJ.esc(leg.to) + '</b> 下车，步行前往目的地</div>'
+          : '<div class="pl-leg-foot">在 <b>' + ZJ.esc(leg.to) + '</b> 同站换乘，预留 5 分钟</div>') +
+        '<button class="pl-open-line" data-act="pl-line" data-line="' + ZJ.esc(leg.line) + '" data-dir="' + ZJ.esc(leg.dir.key) +
+        '" data-station="' + ZJ.esc(leg.from) + '">查看「' + ZJ.esc(leg.line) + '」实时车辆' +
+        '<svg class="ico"><use href="#i-right"/></svg></button>' +
+        '</section>';
+    }).join('');
+  }
+
+  /* 重新挂载横向站点条，保持用户滚动位置 */
+  function mountStrips(keep) {
+    P.plan.legs.forEach((leg, i) => {
+      const el = $('plTl' + i);
+      if (!el) return;
+      const d = legData(leg);
+      ZJ.Timeline.mount(leg.dir, {
+        el: el,
+        board: leg.fromOrder,
+        alight: leg.toOrder,
+        vehicles: d.vehicles,
+        focus: leg.fromOrder,
+        restore: keep ? keep[i] : null,
+        stopAct: 'noop'
+      });
+      ZJ.Timeline.bindHint($('plSc' + i), $('plHint' + i));
+    });
+  }
+
+  function render(keepScroll) {
+    if (!P.plan) return;
+    const keep = keepScroll ? P.plan.legs.map((l, i) => {
+      const sc = $('plSc' + i);
+      return sc ? sc.scrollLeft : null;
+    }) : null;
+    renderSummary();
+    renderLegs();
+    mountStrips(keep);
+  }
+
+  /* ---------------- 数据 ---------------- */
+  async function loadAll() {
+    if (!P.plan) return;
+    const rid = ++P.req;
+    P.plan.legs.forEach((leg) => {
+      const old = P.data.get(leg.dir.id) || {};
+      P.data.set(leg.dir.id, { vehicles: old.vehicles || [], err: '', at: old.at || 0, loading: !old.at });
+    });
+    render(true);
+    await ZJ.batch(P.plan.legs, 3, async (leg) => {
+      try {
+        const data = await ZJ.Api.vehicles(leg.dir.id);
+        if (rid !== P.req) return;
+        P.data.set(leg.dir.id, { vehicles: ZJ.RT.normalize(leg.dir, data), err: '', at: Date.now(), loading: false });
+      } catch (e) {
+        if (rid !== P.req) return;
+        P.data.set(leg.dir.id, { vehicles: [], err: (e && e.message) || '网络异常', at: Date.now(), loading: false });
+      }
+    });
+    if (rid !== P.req) return;
+    render(true);
+  }
+
+  function startPoll() {
+    stopPoll();
+    P.timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && $('page-plan').classList.contains('on')) loadAll();
+    }, ZJ.CFG.LINE_POLL);
+  }
+  function stopPoll() {
+    if (P.timer) clearInterval(P.timer);
+    P.timer = null;
+  }
+
+  const Plan = {
+    open(plan, from, to) {
+      if (!plan || !plan.legs || !plan.legs.length) { ZJ.toast('方案信息不完整'); return; }
+      P.plan = plan;
+      P.from = from || plan.legs[0].from;
+      P.to = to || plan.legs[plan.legs.length - 1].to;
+      P.data = new Map();
+      P.req++;
+      $('plTitle').textContent = '出行方案';
+      $('plSub').textContent = P.from + ' → ' + P.to + ' · ' + (plan.transfers === 0 ? '直达' : plan.transfers + ' 次换乘');
+      $('plSummary').innerHTML = '';
+      $('plLegs').innerHTML = '<div class="pl-loading"><span class="spin"></span>正在获取分段实时公交…</div>';
+      ZJ.UI.openFull('page-plan');
+      render();
+      loadAll();
+      startPoll();
+    },
+    close() {
+      stopPoll();
+      P.req++;
+      ZJ.UI.closeFull('page-plan');
+    },
+    refresh() { ZJ.Api.resetHealth(); loadAll(); },
+    state() { return P; }
+  };
+  ZJ.Plan = Plan;
+
+  /* ---------------- 动作 ---------------- */
+  ZJ.act('plan-back', () => Plan.close());
+  ZJ.act('plan-refresh', () => { ZJ.Api.resetHealth(); loadAll(); ZJ.toast('正在重新获取实时数据…'); });
+  ZJ.act('pl-line', (el) => {
+    ZJ.Line.open(el.dataset.line, el.dataset.dir, el.dataset.station);
+  });
+  ZJ.act('pl-bell', (el) => {
+    ZJ.Reminder.openSheet({ line: el.dataset.line, dirKey: el.dataset.dir, station: el.dataset.station }, () => {
+      render(true);
+      if (ZJ.Home) ZJ.Home.renderReminders();
+    });
+  });
+})();

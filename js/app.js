@@ -3,7 +3,8 @@
   const ZJ = window.ZJ;
   const $ = ZJ.$;
 
-  /* ================= 定位（浏览器 / Capacitor WebView） ================= */
+  /* ================= 定位（浏览器 / Capacitor WebView） =================
+     首页已移除附近站点栏目，定位只用于：去哪「我的位置」、线路页默认等车站 */
   const Geo = {
     state: 'idle',
     lat: 0,
@@ -11,16 +12,11 @@
     accuracy: 0,
     error: '',
     locate(silent) {
-      const chip = $('homeLocTxt');
       Geo.state = 'locating';
-      if (chip) chip.textContent = '定位中';
-      if (ZJ.Home) ZJ.Home.renderNearby();
       return new Promise((resolve, reject) => {
         if (!navigator.geolocation) {
           Geo.state = 'fail';
           Geo.error = '设备不支持定位';
-          if (chip) chip.textContent = '定位不可用';
-          if (ZJ.Home) ZJ.Home.renderNearby();
           if (!silent) ZJ.toast('当前设备不支持定位');
           reject(new Error(Geo.error));
           return;
@@ -32,20 +28,12 @@
             Geo.lng = pos.coords.longitude;
             Geo.accuracy = pos.coords.accuracy || 0;
             Geo.error = '';
-            const near = ZJ.Data.nearby(Geo.lat, Geo.lng, 1)[0];
-            if (chip) chip.textContent = near ? near.station.name : '已定位';
-            if (ZJ.Home) ZJ.Home.renderNearby();
-            if (ZJ.Station && $('page-station').classList.contains('on')) {
-              $('stSub').textContent = $('stSub').textContent; // 保持
-            }
             resolve(Geo);
           },
           (err) => {
             Geo.state = 'fail';
             Geo.error = err && err.code === 1 ? '定位权限被拒绝' : err && err.code === 3 ? '定位超时' : '定位失败';
-            if (chip) chip.textContent = '定位失败';
-            if (ZJ.Home) ZJ.Home.renderNearby();
-            if (!silent) ZJ.toast(Geo.error + '，可手动搜索线路');
+            if (!silent) ZJ.toast(Geo.error + '，可手动选择站点');
             reject(new Error(Geo.error));
           },
           { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }

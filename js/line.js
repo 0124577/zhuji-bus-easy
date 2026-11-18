@@ -20,7 +20,6 @@
     plans: null,
     plansFor: ''
   };
-  let sheetMode = 'one';
 
   function lineFavIcon() {
     const on = ZJ.Fav.hasLine(S.line.name);
@@ -77,17 +76,7 @@
     return '更新于 ' + ZJ.clock(new Date(S.at)) + ' · 点此刷新';
   }
 
-  function isInService(d) {
-    const now = ZJ.nowMin();
-    const toMin = (t) => {
-      const m = String(t || '').match(/(\d{1,2}):(\d{2})/);
-      return m ? +m[1] * 60 + +m[2] : 0;
-    };
-    const f = toMin(d.first), l = toMin(d.last);
-    if (!f && !l) return true;
-    if (l < f) return now >= f || now <= l;
-    return now >= f - 10 && now <= l + 45;
-  }
+  function isInService(d) { return ZJ.isInService(d); }
 
   function nextPlanned(targetOrder) {
     if (!S.plans || !S.plans.length) return null;
@@ -149,34 +138,23 @@
 
   function renderTimeline() {
     const d = S.dir;
-    const selIdx = findStopIndex(S.station);
-    const step = 72, pad = 24;
-    const width = (d.stops.length - 1) * step + pad * 2;
-    const fillPct = d.stops.length > 1 ? (selIdx / (d.stops.length - 1)) * 100 : 0;
-    let html = '<div class="tl-bar"><div class="tl-fill" style="width:' + fillPct.toFixed(2) + '%"></div><div class="tl-chev"></div></div>';
-    d.stops.forEach((s, i) => {
-      const cls = i === selIdx ? 'sel' : i < selIdx ? 'passed' : '';
-      const nm = s.name.length > 9 ? s.name.slice(0, 8) + '…' : s.name;
-      html += '<div class="tl-item ' + cls + '" style="left:' + (pad + i * step) + 'px">' +
-        '<span class="tl-no">' + s.o + '</span><span class="tl-dot"></span>' +
-        '<span class="tl-nm">' + ZJ.esc(nm) + '</span></div>';
-    });
-    if (S.vehicles.length) {
-      S.vehicles.slice(0, 8).forEach((v) => {
-        const left = pad + Math.max(0, Math.min(d.stops.length - 1, v.pos)) * step;
-        html += '<div class="tl-bus" style="left:' + left.toFixed(1) + 'px" data-act="bus-tip" data-plate="' + ZJ.esc(v.plate) + '">' +
-          '<span class="bub"><svg class="ico"><use href="#i-bus"/></svg></span><span class="pin"></span></div>';
-      });
-    } else {
-      html += '<div class="tl-empty">' + (S.err ? '实时位置不可用，仅显示站点序列' : S.loading ? '正在定位车辆…' : '当前无在线车辆') + '</div>';
-    }
+    const selOrder = findStopIndex(S.station) + 1;
     const tl = $('tl');
-    tl.style.width = width + 'px';
-    tl.innerHTML = html;
+    ZJ.Timeline.mount(d, { el: tl, selected: selOrder, vehicles: S.vehicles, stopAct: 'set-stop' });
+    if (!S.vehicles.length) {
+      const tip = document.createElement('div');
+      tip.className = 'tl-empty';
+      tip.textContent = S.err ? '实时位置不可用，仅显示站点序列' : S.loading ? '正在定位车辆…' : '当前无在线车辆';
+      tl.appendChild(tip);
+    }
     $('tlLegend').innerHTML = '<i><span class="b-dot"></span>已过</i><i><span class="g-dot"></span>前方</i>';
-    const sc = $('tlScroll');
-    const target = pad + selIdx * step - sc.clientWidth / 2;
-    requestAnimationFrame(() => { sc.scrollLeft = Math.max(0, target); });
+    const hint = $('tlHint');
+    if (hint) {
+      hint.dataset.total = d.stops.length;
+      ZJ.Timeline.bindHint($('tlScroll'), hint);
+      const e = ZJ.Timeline.edges($('tlScroll'));
+      hint.textContent = '共 ' + d.stops.length + ' 站 · ' + (e.right ? '左右滑动浏览全程' : '已显示全程');
+    }
   }
 
   function renderMyStop() {
@@ -191,37 +169,44 @@
       '<svg class="ico"><use href="#i-bell"/></svg>' + rmLabel + '</button>';
   }
 
+  /* 竖向时间轴（大字版）：与横向时间轴同源，便于长者阅读与点按 */
   function renderStops() {
     const d = S.dir;
-    const selIdx = findStopIndex(S.station);
-    const hasLive = S.vehicles.length > 0;
-    const rows = d.stops.map((s, i) => {
-      const arr = hasLive ? ZJ.RT.arrivalsTo(d, S.vehicles, s.o) : [];
-      const best = arr[0];
-      let eta = '<span class="stop-eta">—</span>';
-      if (best) {
-        eta = '<span class="stop-eta live"><svg class="ico mini-bus"><use href="#i-bus"/></svg>' +
-          (best.atStation ? '已到站' : '约 ' + best.minutes + ' 分') + '</span>' +
-          (best.remain ? '<span class="stop-tag pink">' + best.remain + ' 站</span>' : '<span class="stop-tag green">到站</span>');
-      } else if (hasLive) {
-        const anyBefore = S.vehicles.some((v) => v.order > s.o || (v.order === s.o && !v.arrived));
-        if (anyBefore) eta = '<span class="stop-tag">已过</span>';
-      }
-      const isSel = i === selIdx;
-      const rm = ZJ.Reminder.find(S.line.name, S.dir.key, s.name);
-      return '<div class="stop-row ' + (isSel ? 'sel' : i < selIdx ? 'passed' : '') + '" data-act="set-stop" data-station="' + ZJ.esc(s.name) + '">' +
-        '<span class="stop-idx"><i></i><s></s></span>' +
-        '<span class="stop-main"><b>' + ZJ.esc(s.name) + '</b>' + eta +
-        '<span class="bell ' + (rm ? 'on' : '') + '" data-act="stop-remind" data-station="' + ZJ.esc(s.name) + '"><svg class="ico"><use href="#i-bell"/></svg></span>' +
-        '</span></div>';
-    }).join('');
-    $('stopList').innerHTML = rows;
-    $('stopHint').textContent = hasLive ? '实时倒计时 · 点站点设为等车站' : '静态站序 · 点站点设为等车站';
+    const selOrder = findStopIndex(S.station) + 1;
+    const hasLive = S.vehicles.length > 0 && !S.err;
+    $('stopList').innerHTML = ZJ.VTimeline.html(d, {
+      selected: selOrder,
+      vehicles: S.vehicles,
+      err: S.err,
+      line: S.line.name,
+      dirKey: d.key,
+      rowAct: 'set-stop',
+      bellAct: 'stop-remind'
+    });
+    $('stopHint').textContent = hasLive ? '实时到站 · 点站点设为等车站' : '静态站序 · 点站点设为等车站';
+  }
+
+  /* 实时能力降级提示：接口失效 / 静态模式时明确告知，并提供重试 */
+  function renderBanner() {
+    const box = $('lineBanner');
+    if (!box) return;
+    if (ZJ.Api.mode === 'static') {
+      box.innerHTML = '<div class="degrade-banner soft"><svg class="ico"><use href="#i-refresh"/></svg>' +
+        '<div><b>静态数据模式</b><span>站点、首末班、里程照常可用；车辆位置需要实时接口</span></div></div>';
+      return;
+    }
+    if (!S.err) { box.innerHTML = ''; return; }
+    const net = /网络|联网|超时|服务/.test(S.err);
+    box.innerHTML = '<div class="degrade-banner"><svg class="ico"><use href="#i-refresh"/></svg>' +
+      '<div><b>' + (net ? '网络异常，已自动降级为静态数据' : '实时接口暂不可用，已自动降级为静态数据') + '</b>' +
+      '<span>' + ZJ.esc(S.err) + ' · 站点、首末班与静态估算仍可查看</span></div>' +
+      '<button data-act="line-refresh">重试</button></div>';
   }
 
   function renderAll() {
     renderHeader();
     renderInfo();
+    renderBanner();
     renderStat();
     renderTimeline();
     renderMyStop();
@@ -333,27 +318,12 @@
   };
   ZJ.Line = Line;
 
-  /* ---------------- 提醒设置 ---------------- */
+  /* ---------------- 提醒设置（弹层实现见 reminder.js，线路页与方案详情页共用） ---------------- */
   function openReminderSheet(station) {
-    const rm = ZJ.Reminder.find(S.line.name, S.dir.key, station);
-    sheetMode = rm ? rm.mode : 'one';
-    const modes = Object.keys(ZJ.Reminder.MODES).map((k) => {
-      const m = ZJ.Reminder.MODES[k];
-      return '<button class="rm-mode ' + (k === sheetMode ? 'on' : '') + '" data-act="rm-mode" data-mode="' + k + '">' +
-        '<span class="r-ico"><svg class="ico"><use href="#i-bell"/></svg></span>' +
-        '<span class="r-t"><b>' + m.label + '</b><span>' + m.desc + '</span></span>' +
-        '<span class="r-chk"></span></button>';
-    }).join('');
-    ZJ.UI.sheet(
-      '<div class="sheet-h"><b>到站提醒</b><button class="sheet-x" data-act="close-sheet"><svg class="ico"><use href="#i-close"/></svg></button></div>' +
-      '<div class="sheet-body">' +
-      '<div class="st-summary" style="margin-bottom:12px"><b>' + ZJ.esc(S.line.name) + '</b><span>往 ' + ZJ.esc(S.dir.end) + '</span><span class="upd">' + ZJ.esc(station) + '</span></div>' +
-      '<div class="rm-modes">' + modes + '</div>' +
-      '<p class="sheet-note">提醒只在 App 打开时通过本地弹窗 + 震动触发，不发送系统推送、不在后台驻留。实时数据中断时提醒会暂停。</p>' +
-      '<button class="sheet-primary" data-act="rm-save" data-station="' + ZJ.esc(station) + '">开启提醒</button>' +
-      (rm ? '<button class="mini" style="width:100%;margin-top:10px;height:38px" data-act="rm-cancel" data-station="' + ZJ.esc(station) + '">取消该站提醒</button>' : '') +
-      '</div>'
-    );
+    ZJ.Reminder.openSheet({ line: S.line.name, dirKey: S.dir.key, station: station }, () => {
+      renderMyStop();
+      renderStops();
+    });
   }
 
   function openTimetable() {
@@ -406,24 +376,6 @@
       S.station = name;
       renderAll();
     });
-  });
-  ZJ.act('rm-mode', (el) => {
-    sheetMode = el.dataset.mode;
-    const wrap = el.parentNode;
-    if (wrap) wrap.querySelectorAll('.rm-mode').forEach((n) => n.classList.toggle('on', n === el));
-  });
-  ZJ.act('rm-save', (el) => {
-    const rm = ZJ.Reminder.add({ line: S.line.name, dirKey: S.dir.key, station: el.dataset.station, mode: sheetMode });
-    ZJ.UI.closeSheet();
-    renderAll();
-    if (rm) ZJ.toast('已开启：' + ZJ.Reminder.MODES[rm.mode].label);
-  });
-  ZJ.act('rm-cancel', (el) => {
-    const rm = ZJ.Reminder.find(S.line.name, S.dir.key, el.dataset.station);
-    if (rm) ZJ.Reminder.remove(rm.id);
-    ZJ.UI.closeSheet();
-    renderAll();
-    ZJ.toast('已取消该站提醒');
   });
   ZJ.act('open-tt', () => openTimetable());
   ZJ.act('bus-tip', (el) => ZJ.toast(el.dataset.plate ? '车辆 ' + el.dataset.plate : '实时车辆位置'));

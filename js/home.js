@@ -1,36 +1,10 @@
-/* 首页：线路搜索 / 附近站点 / 收藏 / 全部线路 / 提醒概览 */
+/* 首页：线路搜索 / 收藏 / 全部线路 / 提醒概览（已移除附近站点栏目） */
 (function () {
   const ZJ = window.ZJ;
   const $ = ZJ.$;
   const Data = ZJ.Data;
 
   const H = { q: '', limit: 80, timer: null };
-
-  function renderNearby() {
-    const box = $('nearbyList');
-    const geo = ZJ.Geo || {};
-    if (geo.state === 'locating' || geo.state === 'idle') {
-      box.innerHTML = '<div class="loading"><span class="spin"></span>正在定位附近站点…</div>';
-      return;
-    }
-    if (geo.state !== 'ok') {
-      box.innerHTML = '<div class="empty-block">定位失败，可能是权限未开启<br>' +
-        '<button class="btn-ghost" data-act="relocate">重新定位</button></div>';
-      return;
-    }
-    const list = Data.nearby(geo.lat, geo.lng, 5);
-    if (!list.length) {
-      box.innerHTML = '<div class="empty-block">附近没有收录的站点<br>可以用上方搜索线路，或到「去哪」手动选站</div>';
-      return;
-    }
-    box.innerHTML = list.map((x) =>
-      '<button class="nb-row" data-act="open-station" data-name="' + ZJ.esc(x.station.name) + '">' +
-      '<span class="nb-ico"><svg class="ico"><use href="#i-pin"/></svg></span>' +
-      '<span class="nb-main"><b>' + ZJ.esc(x.station.name) + '</b>' +
-      '<span>途经 ' + new Set(x.station.entries.map((e) => e.line)).size + ' 条线路 · ' + x.station.entries.length + ' 个方向</span></span>' +
-      '<span class="nb-dist">' + ZJ.distTxt(x.dist) + '</span>' +
-      '<svg class="ico ico-right"><use href="#i-right"/></svg></button>').join('');
-  }
 
   function renderFav() {
     const lines = ZJ.Fav.lines();
@@ -126,12 +100,10 @@
   }
 
   const Home = {
-    renderNearby: renderNearby,
     renderFav: renderFav,
     renderReminders: renderReminders,
     renderLines: renderLines,
     renderAll() {
-      renderNearby();
       renderFav();
       renderReminders();
       renderLines();
@@ -165,8 +137,6 @@
     onSearch();
     $('lineQ').focus();
   });
-  ZJ.act('locate', () => ZJ.Geo.locate(false));
-  ZJ.act('relocate', () => ZJ.Geo.locate(false));
   ZJ.act('reminder-list', () => openReminderList());
   ZJ.act('remind-del', (el, e) => {
     if (e) e.stopPropagation();
