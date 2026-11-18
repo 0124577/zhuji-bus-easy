@@ -384,12 +384,52 @@ await sleep(1500);
 ok('点击方案卡片进入详情页', await page.$eval('#page-plan', (el) => el.classList.contains('on')));
 ok('详情页标题为出行方案', (await txt('#plTitle')) === '出行方案', await txt('#plTitle'));
 ok('副标题含起终点', (await txt('#plSub')).indexOf('火车站') > -1 && (await txt('#plSub')).indexOf('草塔停车场') > -1, await txt('#plSub'));
+
+/* 定向 mock：每段固定给一辆「距上车站 4 站」的车，确保高亮条可断言 */
+await page.evaluate(() => {
+  ZJ.Api.vehicles = async (dirId) => {
+    const leg = (ZJ.Plan.state().plan?.legs || []).find((l) => l.dir.id === dirId);
+    const order = leg ? Math.max(1, leg.fromOrder - 4) : 1;
+    return { busAverageSpeed: 240, list: [{ vehicleOrder: order, distance: 120, isArriveStation: 0, plateNumber: '浙D00088D' }], static: false };
+  };
+  ZJ.Plan.refresh();
+});
+await sleep(1400);
 ok('展示分段卡片', (await cnt('.pl-leg')) >= 1, String(await cnt('.pl-leg')));
 ok('汇总显示总耗时', /\d+/.test(await txt('.pl-sum .big')), await txt('.pl-sum .big'));
 ok('汇总显示站数与段数', /共 \d+ 站/.test(await txt('.pl-sum-chips')), await txt('.pl-sum-chips'));
 const legLive = await txt('.pl-live');
 ok('分段展示实时车辆信息', legLive.length > 0, legLive.slice(0, 60));
-ok('实时块含剩余站或收班说明', /(\d+站|已收班|暂无|实时数据)/.test(legLive), legLive.slice(0, 60));
+ok('实时块含剩余站或收班说明', /(\d+\s*站|已收班|暂无|实时数据)/.test(legLive), legLive.slice(0, 60));
+
+/* 顶部「还剩几站」高亮条（有在线车辆时出现） */
+const hl = await page.evaluate(() => {
+  const el = document.querySelector('.pl-hl');
+  if (!el) return null;
+  const num = el.querySelector('.pl-hl-num');
+  const lay = el.getBoundingClientRect();
+  return {
+    txt: el.innerText.replace(/\s+/g, ' ').trim(),
+    font: parseFloat(getComputedStyle(num).fontSize),
+    bg: getComputedStyle(el).backgroundImage,
+    num: parseInt(num.textContent, 10),
+    h: Math.round(lay.height),
+    above: !!(el.compareDocumentPosition(document.querySelector('.pl-sum')) & Node.DOCUMENT_POSITION_FOLLOWING),
+    caps: !!document.querySelector('.pl-remain'),
+    capFont: document.querySelector('.pl-remain b') ? parseFloat(getComputedStyle(document.querySelector('.pl-remain b')).fontSize) : 0
+  };
+});
+if (hl) {
+  ok('详情页顶部突出「还有 N 站」', /(还有|车已到)\s*\d+\s*站/.test(hl.txt), hl.txt.slice(0, 60));
+  ok('剩余站数字 >= 28px 大字', hl.font >= 28, String(hl.font));
+  ok('高亮条为高对比渐变底且在汇总卡之上', /gradient/.test(hl.bg) && hl.above, 'h=' + hl.h);
+  ok('分段剩余站为白字粉底胶囊且数字 >= 22px', hl.caps && hl.capFont >= 22, 'capFont=' + hl.capFont);
+} else {
+  ok('无在线车辆时不渲染高亮条', !hl && /(已收班|暂无|实时数据)/.test(legLive), legLive.slice(0, 40));
+  ok('无在线车辆时汇总改为静态口径', /(暂无在线车辆|静态数据)/.test(await txt('#plSummary')), (await txt('#plSummary')).slice(0, 40));
+  ok('无在线车辆时分段卡片与站点条仍完整', (await cnt('.pl-leg')) >= 1 && (await cnt('.pl-strip .tl-item')) > 5);
+  ok('无在线车辆时提醒铃铛仍可用', (await cnt('.pl-bell')) > 3);
+}
 ok('展示上下车站', (await cnt('.pl-hop')) >= 2, String(await cnt('.pl-hop')));
 ok('展示该段线路站点条', (await cnt('.pl-strip .tl-item')) > 5, String(await cnt('.pl-strip .tl-item')));
 const plStrip = await page.evaluate(() => {

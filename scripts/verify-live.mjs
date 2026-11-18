@@ -2,7 +2,7 @@
 import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = process.argv[2] || 'https://0124577.github.io/zhuji-bus-lite/';
+const URL = process.argv[2] || 'https://0124577.github.io/zhuji-bus-easy/';
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -54,14 +54,22 @@ const lineName = await page.evaluate(() => {
   return ln.name;
 });
 await new Promise((r) => setTimeout(r, 2500));
-const lineState = await page.evaluate(() => ({
-  open: document.querySelector('#page-line')?.classList.contains('on'),
-  name: document.querySelector('.line-title')?.textContent?.trim(),
-  stops: document.querySelectorAll('.stop-row').length,
-  hasStat: !!document.querySelector('.stat-num'),
-  mode: document.querySelector('.data-mode')?.textContent?.trim() || window.ZJ.Api.mode,
-}));
-ok('线路详情打开', !!lineState.open && lineState.stops > 3, `${lineName} / ${lineState.stops} 站 / ${lineState.mode}`);
+const lineState = await page.evaluate(() => {
+  const scroll = document.querySelector('#tlScroll');
+  return {
+    open: document.querySelector('#page-line')?.classList.contains('on'),
+    name: document.querySelector('.line-title')?.textContent?.trim(),
+    vtRows: document.querySelectorAll('.vt-row').length,
+    tlNodes: document.querySelectorAll('.tl-item').length,
+    hScroll: scroll ? getComputedStyle(scroll).overflowX : '',
+    scrollable: scroll ? scroll.scrollWidth > scroll.clientWidth : false,
+    mode: document.querySelector('.data-mode')?.textContent?.trim() || window.ZJ.Api.mode,
+    nearby: document.querySelectorAll('#nearbyCard,.nb-row').length,
+  };
+});
+ok('线路详情打开', !!lineState.open && lineState.vtRows > 3, `${lineName} / 竖向 ${lineState.vtRows} 行 / ${lineState.mode}`);
+ok('横向时间轴可左右滚动', lineState.hScroll === 'auto' && lineState.scrollable, `${lineState.tlNodes} 节点`);
+ok('首页已无附近站点栏目', lineState.nearby === 0);
 
 const shotDir = 'C:/work/bus/_tmp/shots';
 await page.screenshot({ path: `${shotDir}/live-line.png` });
