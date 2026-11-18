@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#FF5C8A">
+<title>诸暨公交 · 实时到站</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23FF5C8A'/%3E%3Crect x='15' y='13' width='34' height='27' rx='6' fill='white'/%3E%3Crect x='20' y='18' width='24' height='11' rx='3' fill='%23FF5C8A'/%3E%3Ccircle cx='24' cy='46' r='4.5' fill='white'/%3E%3Ccircle cx='40' cy='46' r='4.5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.2 10.6 12 3.4l8.8 7.2V20a1.2 1.2 0 0 1-1.2 1.2h-4.7v-6.4H9.1v6.4H4.4A1.2 1.2 0 0 1 3.2 20z"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><path d="M12 3.2 20.2 20 12 15.4 3.8 20z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.8"/><path d="M20 20l-4.3-4.3"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.8z"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.4 10.2a5.6 5.6 0 0 1 11.2 0c0 4 1.4 5.4 1.4 5.4H5s1.4-1.4 1.4-5.4z"/><path d="M10.2 19a2 2 0 0 0 3.6 0"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.6"/><path d="M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.4 12a8.4 8.4 0 1 1-2.6-6.1"/><path d="M20.6 4.2v5.2h-5.2"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7.2 4.4v14.2M3.6 15l3.6 3.6L10.8 15"/><path d="M16.8 19.6V5.4M13.2 9l3.6-3.6L20.4 9"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.8 5.2 8 12l6.8 6.8"/></symbol>
+  <symbol id="i-bus" viewBox="0 0 24 24"><rect x="4.2" y="3.4" width="15.6" height="14.4" rx="3"/><path d="M4.2 10.4h15.6M7.4 21.2v-1.6M16.6 21.2v-1.6"/><circle cx="8.2" cy="14.2" r="1"/><circle cx="15.8" cy="14.2" r="1"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.2 2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.6 6.6h14.8M9.4 6.6V4.4h5.2v2.2M6.4 6.6l.9 13.4h9.4l.9-13.4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9.2 5.2 16 12l-6.8 6.8"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s6.6-6.1 6.6-10.4A6.6 6.6 0 0 0 5.4 10.6C5.4 14.9 12 21 12 21z"/><circle cx="12" cy="10.4" r="2.4"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6"/></symbol>
+</svg>
+
+<div class="app" id="app">
+
+  <!-- ================= 首页 ================= -->
+  <main class="page" id="page-home">
+    <header class="home-hdr">
+      <div class="home-top">
+        <div class="home-title">
+          <h1>诸暨公交</h1>
+          <p>实时到站 · 换乘查询 · 到站提醒</p>
+        </div>
+        <button class="loc-chip" id="homeLoc" data-act="locate">
+          <svg class="ico"><use href="#i-locate"/></svg><span id="homeLocTxt">定位中</span>
+        </button>
+      </div>
+      <div class="searchbar">
+        <svg class="ico"><use href="#i-search"/></svg>
+        <input id="lineQ" type="text" inputmode="search" placeholder="输入线路号，如 1、23、105" autocomplete="off">
+        <button class="search-clr" id="lineQClear" data-act="clear-q" hidden>
+          <svg class="ico"><use href="#i-close"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="home-body">
+      <section class="card" id="nearbyCard">
+        <div class="card-h">
+          <b>附近站点</b>
+          <button class="mini" data-act="relocate">重新定位</button>
+        </div>
+        <div id="nearbyList" class="nearby-list"></div>
+      </section>
+
+      <section class="card fav-card" id="favCard">
+        <div class="card-h"><b>我的收藏</b><span class="mini-txt" id="favCount"></span></div>
+        <div id="favBody"></div>
+      </section>
+
+      <section class="card remind-card" id="remindCard" hidden>
+        <div class="card-h">
+          <b>到站提醒</b>
+          <button class="mini" data-act="reminder-list">管理</button>
+        </div>
+        <div id="remindBody"></div>
+      </section>
+
+      <section class="line-sec">
+        <div class="sec-h">
+          <b id="lineTitle">全部线路</b>
+          <span class="sec-hint" id="lineCount"></span>
+        </div>
+        <div class="line-list" id="lineList"></div>
+      </section>
+      <p class="foot-note">站点与线路为本地静态数据，车辆位置来自诸暨公交官方实时接口<br>无地图渲染 · 定位仅用于计算附近站点</p>
+    </div>
+  </main>
+
+  <!-- ================= 去哪 ================= -->
+  <main class="page" id="page-go">
+    <header class="go-hdr">
+      <div class="go-title">
+        <h1>去哪</h1>
+        <p>直达优先 · 无直达自动找最少换乘</p>
+      </div>
+      <div class="route-card">
+        <div class="route-row" data-act="pick-from">
+          <span class="dot from"></span>
+          <div class="route-txt">
+            <span class="route-lab">起点</span>
+            <b id="fromName">选择起点站</b>
+          </div>
+          <button class="route-my" data-act="pick-my" id="myLocBtn">我的位置</button>
+        </div>
+        <div class="route-line"></div>
+        <div class="route-row" data-act="pick-to">
+          <span class="dot to"></span>
+          <div class="route-txt">
+            <span class="route-lab">终点</span>
+            <b id="toName">选择终点站</b>
+          </div>
+          <button class="route-swap" data-act="swap-stops" title="交换起终点">
+            <svg class="ico"><use href="#i-swap"/></svg>
+          </button>
+        </div>
+      </div>
+      <button class="plan-btn" data-act="plan">查询出行方案</button>
+    </header>
+
+    <div class="go-body">
+      <div id="planResult"></div>
+
+      <section class="card hist-card">
+        <div class="card-h">
+          <b>搜索历史</b>
+          <button class="mini" data-act="clear-hist">清空</button>
+        </div>
+        <div id="histList"></div>
+      </section>
+
+      <p class="foot-note">换乘与耗时均为本地静态数据估算，仅供参考，实际以运营为准</p>
+    </div>
+  </main>
+
+  <!-- ================= 线路实时页 ================= -->
+  <section class="fullpage" id="page-line">
+    <header class="line-hdr">
+      <button class="line-back" data-act="line-back" aria-label="返回">
+        <svg class="ico"><use href="#i-back"/></svg>
+      </button>
+      <div class="line-hdr-t">
+        <b id="lnName">—</b>
+        <span id="lnDir">—</span>
+      </div>
+      <button class="line-hbtn" id="lnFav" data-act="line-fav" aria-label="收藏线路">
+        <svg class="ico"><use href="#i-star"/></svg>
+      </button>
+      <button class="line-hbtn" data-act="line-swap" aria-label="切换方向">
+        <svg class="ico"><use href="#i-swap"/></svg>
+      </button>
+    </header>
+
+    <div class="line-body">
+      <section class="card line-info" id="lineInfo"></section>
+      <section class="stat-card" id="lineStat"></section>
+
+      <section class="card tl-card">
+        <div class="card-h">
+          <b>车辆位置</b>
+          <span class="tl-legend" id="tlLegend"></span>
+        </div>
+        <div class="tl-scroll" id="tlScroll">
+          <div class="tl" id="tl"></div>
+        </div>
+      </section>
+
+      <section class="mystop-bar" id="myStopBar"></section>
+
+      <section class="stop-sec">
+        <div class="sec-h">
+          <b>途经站点</b>
+          <span class="sec-hint" id="stopHint"></span>
+        </div>
+        <div class="stop-list" id="stopList"></div>
+      </section>
+
+      <p class="foot-note" id="lineNote">计划班次与到站时间为静态数据估算，仅供参考，受路况影响</p>
+    </div>
+  </section>
+
+  <!-- ================= 站点实时页 ================= -->
+  <section class="fullpage" id="page-station">
+    <header class="line-hdr st-hdr">
+      <button class="line-back" data-act="station-back" aria-label="返回">
+        <svg class="ico"><use href="#i-back"/></svg>
+      </button>
+      <div class="line-hdr-t">
+        <b id="stName">—</b>
+        <span id="stSub">—</span>
+      </div>
+      <button class="line-hbtn" id="stFav" data-act="station-fav" aria-label="收藏站点">
+        <svg class="ico"><use href="#i-star"/></svg>
+      </button>
+      <button class="line-hbtn" data-act="station-refresh" aria-label="刷新">
+        <svg class="ico"><use href="#i-refresh"/></svg>
+      </button>
+    </header>
+    <div class="line-body">
+      <div class="st-summary" id="stSummary"></div>
+      <div class="st-lines" id="stLines"></div>
+      <p class="foot-note">到站时间为实时接口估算，仅供参考，受路况影响</p>
+    </div>
+  </section>
+
+  <!-- ================= 底部导航 ================= -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab on" data-tab="home">
+      <svg class="ico"><use href="#i-home"/></svg><span>首页</span>
+    </button>
+    <button class="tab" data-tab="go">
+      <svg class="ico"><use href="#i-route"/></svg><span>去哪</span>
+    </button>
+  </nav>
+</div>
+
+<div class="mask" id="mask" hidden><div class="sheet" id="sheet"></div></div>
+<div class="mask alert-mask" id="alertMask" hidden><div class="alert-card" id="alertCard"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="data/snapshot.js"></script>
+<script src="js/core.js"></script>
+<script src="js/api.js"></script>
+<script src="js/reminder.js"></script>
+<script src="js/picker.js"></script>
+<script src="js/line.js"></script>
+<script src="js/station.js"></script>
+<script src="js/go.js"></script>
+<script src="js/home.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
