@@ -19,6 +19,20 @@
 
 ---
 
+## 在线体验与下载
+
+| 类型 | 地址 |
+|---|---|
+| 网页版（手机浏览器打开） | **https://0124577.github.io/zhuji-bus-lite/** |
+| 安卓安装包（APK 3.0 MB） | **[zhuji-bus-lite-v1.0.0.apk](https://github.com/0124577/zhuji-bus-lite/releases/download/v1.0.0/zhuji-bus-lite-v1.0.0.apk)** |
+| 版本发布说明 | https://github.com/0124577/zhuji-bus-lite/releases/tag/v1.0.0 |
+| 源码仓库 | https://github.com/0124577/zhuji-bus-lite |
+
+APK 为自签名（`CN=Zhuji Bus Live`），安装时需在系统里允许「安装未知来源应用」；包名 `com.zhuji.bus.lite`，版本名 `1.0.0`，最低 Android 5.1。
+校验和：`SHA-256 ebe7d0557e4e3dc48a6b7499f7583baed9917ec46ccc4f052139ac0245c4d751`
+
+---
+
 ## 一、项目介绍
 
 诸暨公交官方实时接口（`zjcx.zhuji.gov.cn`）免登录可用，但原版页面以「线路列表 + 站点序列」为主，缺少**车辆在线路上的位置**与**下车提醒**。本项目在 v2.0.0 的静态站点表与换乘算法基础上重做前端：
@@ -182,13 +196,18 @@ window.SNAPSHOT = {
 
 ### GitHub Pages
 
+本项目已部署：**https://0124577.github.io/zhuji-bus-lite/**（分支 `gh-pages`，根目录即 `www/` 内容）。
+
+仓库结构里网页源码位于 `www/`，Pages 需要站点在分支根目录，因此用 subtree 推送：
+
 ```bash
-# 仓库已包含 gh-pages 分支时，直接访问：
-#   https://<user>.github.io/<repo>/
+# 首次：把 www/ 推到 gh-pages 分支（分支根目录 = www 内容）
 git subtree push --prefix www origin gh-pages
+
+# 之后每次改动 www/ 再执行同一条命令即可增量更新
 ```
 
-或在仓库 **Settings → Pages** 选择分支 `gh-pages` / 根目录。
+也可在仓库 **Settings → Pages** 手动选择分支 `gh-pages` / 根目录。
 
 ### 任意静态托管
 
@@ -267,6 +286,14 @@ node tests/e2e/app-test.mjs                    # 终端 2（需本地 Chrome）
 - 结果：**105 项断言全部通过**，控制台 0 个 JS 错误
 - 覆盖：静态数据加载、Tab 切换、定位与附近站点、线路搜索、线路实时页、上下行切换、收藏线路/站点、时刻表、到站提醒（含震动与弹窗）、站点实时页、换乘规划、历史记录、定位失败、网络异常降级、无结果空态、移动端横向溢出、禁用功能核查
 - 详见 [docs/自测报告.md](docs/自测报告.md)
+
+线上部署校验（直接跑真实域名，确认 Pages 资源与功能正常）：
+
+```bash
+node scripts/verify-live.mjs
+# PASS 9 项：标题、静态数据 395 线 / 779 向 / 3061 站、双 Tab、无地图引用、
+#            切 Tab、线路详情（1路 29 站）、0 控制台报错、0 失败请求
+```
 
 ---
 

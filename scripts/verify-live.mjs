@@ -1,0 +1,79 @@
+// 线上部署校验：加载 GitHub Pages，检查资源、Tab、实时页与报错
+import puppeteer from 'puppeteer-core';
+
+const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const URL = process.argv[2] || 'https://0124577.github.io/zhuji-bus-lite/';
+
+const browser = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: 'new',
+  args: ['--no-sandbox', '--disable-dev-shm-usage'],
+});
+const page = await browser.newPage();
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+
+const errors = [];
+const failed = [];
+page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('requestfailed', (r) => failed.push(r.url() + ' ' + r.failure()?.errorText));
+page.on('response', (r) => { if (r.status() >= 400) failed.push(r.url() + ' HTTP ' + r.status()); });
+
+const out = [];
+const ok = (n, c, extra = '') => out.push(`${c ? 'PASS' : 'FAIL'}  ${n}${extra ? '  ' + extra : ''}`);
+
+await page.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
+
+ok('页面标题', (await page.title()).includes('诸暨'), await page.title());
+
+const stat = await page.evaluate(() => ({
+  hasZJ: typeof window.ZJ === 'object',
+  lines: (window.ZJ?.Data?.lines || []).length,
+  dirs: [...(window.ZJ?.Data?.dirs?.keys?.() || [])].length,
+  stations: (window.ZJ?.Data?.stations || []).length,
+  tabs: [...document.querySelectorAll('.tabbar .tab')].map((e) => e.textContent.trim()),
+  apiMode: window.ZJ?.Api?.mode,
+  mapRefs: /amap|AMap|BMap|mapbox|leaflet|qq\.map/i.test(document.documentElement.outerHTML),
+}));
+ok('运行环境存在 ZJ', stat.hasZJ);
+ok('静态数据加载', stat.lines > 300 && stat.stations > 2000, `${stat.lines} 线/${stat.dirs} 向/${stat.stations} 站`);
+ok('Tab 仅两个', stat.tabs.length === 2, stat.tabs.join(' | '));
+ok('无地图 SDK 引用', !stat.mapRefs);
+
+// 切换到「去哪」
+await page.evaluate(() => window.ZJ.setTab('go'));
+await new Promise((r) => setTimeout(r, 400));
+const goVisible = await page.evaluate(() => document.querySelector('#page-go')?.classList.contains('on'));
+ok('切到「去哪」', !!goVisible);
+
+// 打开一条线路（静态数据第一条）
+const lineName = await page.evaluate(() => {
+  window.ZJ.setTab('home');
+  const ln = window.ZJ.Data.lines[0];
+  window.ZJ.Line.open(ln.name);
+  return ln.name;
+});
+await new Promise((r) => setTimeout(r, 2500));
+const lineState = await page.evaluate(() => ({
+  open: document.querySelector('#page-line')?.classList.contains('on'),
+  name: document.querySelector('.line-title')?.textContent?.trim(),
+  stops: document.querySelectorAll('.stop-row').length,
+  hasStat: !!document.querySelector('.stat-num'),
+  mode: document.querySelector('.data-mode')?.textContent?.trim() || window.ZJ.Api.mode,
+}));
+ok('线路详情打开', !!lineState.open && lineState.stops > 3, `${lineName} / ${lineState.stops} 站 / ${lineState.mode}`);
+
+const shotDir = 'C:/work/bus/_tmp/shots';
+await page.screenshot({ path: `${shotDir}/live-line.png` });
+await page.evaluate(() => window.ZJ.Line.close());
+await new Promise((r) => setTimeout(r, 400));
+await page.screenshot({ path: `${shotDir}/live-home.png` });
+
+ok('无控制台报错', errors.length === 0, errors.slice(0, 3).join(' || '));
+ok('无失败请求', failed.length === 0, failed.slice(0, 3).join(' || '));
+
+console.log(out.join('\n'));
+const fails = out.filter((l) => l.startsWith('FAIL')).length;
+console.log(`\n合计 ${out.length} 项，失败 ${fails} 项`);
+await browser.close();
+process.exit(fails ? 1 : 0);
